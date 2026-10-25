@@ -14,9 +14,12 @@ use uuid::Uuid;
 use crate::domain::realm::entities::RealmId;
 use crate::domain::{
     common::generate_uuid_v7,
-    jwt::{JwtError, entities::JwtKeyPair},
+    jwt::{
+        JwtError,
+        entities::{JwtKeyPair, SigningAlgorithm},
+    },
 };
-use crate::entity::{jwt_keys, realms};
+use crate::entity::{jwt_keys, realm_settings, realms};
 
 pub const PRIVATE_KEY_PURPOSE: &str = "jwt_keys.private_key";
 
@@ -84,9 +87,27 @@ impl PostgresKeyStoreRepository {
             .ok_or(JwtError::RealmKeyNotFound)
     }
 
+    /// The type of key a new realm key should be: what the realm setting
+    /// `default_signing_algorithm` asks for. It only applies when a key is
+    /// generated; an existing key signs with the algorithm stored on its row.
+    async fn algorithm_for_new_key(&self, realm_id: Uuid) -> Result<SigningAlgorithm, JwtError> {
+        let setting = realm_settings::Entity::find()
+            .filter(realm_settings::Column::RealmId.eq(realm_id))
+            .one(&self.db)
+            .await
+            .map_err(|e| JwtError::GenerationError(e.to_string()))?;
+
+        Ok(SigningAlgorithm::from_realm_setting(
+            setting
+                .as_ref()
+                .and_then(|s| s.default_signing_algorithm.as_deref()),
+        ))
+    }
+
     async fn generate_key(&self, realm_id: Uuid) -> Result<jwt_keys::Model, JwtError> {
         let common_name = self.certificate_common_name(realm_id).await?;
-        let (private_key, public_key) = JwtKeyPair::generate()?;
+        let alg = self.algorithm_for_new_key(realm_id).await?;
+        let (private_key, public_key) = JwtKeyPair::generate(alg)?;
         let certificate = JwtKeyPair::self_signed_certificate(&private_key, &common_name)?;
 
         let id = generate_uuid_v7();
@@ -101,6 +122,8 @@ impl PostgresKeyStoreRepository {
             public_key: Set(public_key),
             private_key: Set(sealed_private_key),
             certificate: Set(Some(certificate)),
+            kty: Set(alg.key_type().to_string()),
+            alg: Set(alg.as_str().to_string()),
             created_at: Set(chrono::Utc::now().naive_utc()),
         };
 
@@ -163,7 +186,10 @@ impl KeyStoreRepository for PostgresKeyStoreRepository {
         let private_key = self.private_key_of(&key)?;
         let certificate = key.certificate.ok_or(JwtError::RealmKeyNotFound)?;
 
+        let alg = SigningAlgorithm::parse(&key.alg)?;
+
         let key_pair = JwtKeyPair::from_pem(
+            alg,
             &private_key,
             &key.public_key,
             &certificate,
@@ -298,7 +324,8 @@ mod tests {
         let fixture = setup().await;
         let realm_id = insert_realm(&fixture.pool, "tenant-legacy").await;
 
-        let (private_key, public_key) = JwtKeyPair::generate().expect("generate legacy key");
+        let (private_key, public_key) =
+            JwtKeyPair::generate(SigningAlgorithm::Rs256).expect("generate legacy key");
         let legacy_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO jwt_keys (id, realm_id, private_key, public_key, created_at) \
@@ -441,7 +468,8 @@ mod tests {
     async fn a_plaintext_key_is_still_read_when_a_cipher_is_configured() {
         let fixture = setup().await;
         let realm_id = insert_realm(&fixture.pool, "tenant-plain").await;
-        let (private_key, public_key) = JwtKeyPair::generate().expect("generate legacy key");
+        let (private_key, public_key) =
+            JwtKeyPair::generate(SigningAlgorithm::Rs256).expect("generate legacy key");
         sqlx::query(
             "INSERT INTO jwt_keys (id, realm_id, private_key, public_key, certificate, created_at) \
              VALUES ($1, $2, $3, $4, $5, NOW())",
@@ -478,5 +506,147 @@ mod tests {
         let unaware = PostgresKeyStoreRepository::new(fixture.repository.db.clone());
 
         assert!(unaware.get_or_generate_key(realm_id).await.is_err());
+    }
+
+    async fn set_signing_algorithm(pool: &sqlx::PgPool, realm_id: RealmId, algorithm: &str) {
+        sqlx::query("DELETE FROM realm_settings WHERE realm_id = $1")
+            .bind(Uuid::from(realm_id))
+            .execute(pool)
+            .await
+            .expect("clear the realm settings");
+        sqlx::query(
+            "INSERT INTO realm_settings (id, realm_id, default_signing_algorithm, updated_at) \
+             VALUES ($1, $2, $3, NOW())",
+        )
+        .bind(Uuid::new_v4())
+        .bind(Uuid::from(realm_id))
+        .bind(algorithm)
+        .execute(pool)
+        .await
+        .expect("set the realm signing algorithm");
+    }
+
+    async fn stored_type(pool: &sqlx::PgPool, realm_id: RealmId) -> (String, String) {
+        sqlx::query_as("SELECT kty, alg FROM jwt_keys WHERE realm_id = $1")
+            .bind(Uuid::from(realm_id))
+            .fetch_one(pool)
+            .await
+            .expect("read the stored key type")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-core -- --ignored"]
+    async fn a_realm_without_a_signing_setting_gets_an_rsa_key() {
+        let fixture = setup().await;
+        let realm_id = insert_realm(&fixture.pool, "tenant-default").await;
+
+        let key = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("generate realm key");
+
+        assert_eq!(key.alg, SigningAlgorithm::Rs256);
+        assert_eq!(
+            stored_type(&fixture.pool, realm_id).await,
+            ("RSA".to_string(), "RS256".to_string())
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-core -- --ignored"]
+    async fn an_eddsa_realm_gets_an_ed25519_key_recorded_on_its_row() {
+        let fixture = setup().await;
+        let realm_id = insert_realm(&fixture.pool, "tenant-eddsa").await;
+        set_signing_algorithm(&fixture.pool, realm_id, "EdDSA").await;
+
+        let key = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("generate realm key");
+
+        assert_eq!(key.alg, SigningAlgorithm::EdDsa);
+        assert_eq!(common_name_of(&key.certificate), "CN=tenant-eddsa");
+        assert_eq!(
+            stored_type(&fixture.pool, realm_id).await,
+            ("OKP".to_string(), "EdDSA".to_string())
+        );
+
+        let again = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("read realm key");
+        assert_eq!(again.id, key.id);
+        assert_eq!(again.alg, SigningAlgorithm::EdDsa);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-core -- --ignored"]
+    async fn an_existing_key_keeps_its_algorithm_when_the_setting_changes() {
+        let fixture = setup().await;
+        let realm_id = insert_realm(&fixture.pool, "tenant-switch").await;
+        set_signing_algorithm(&fixture.pool, realm_id, "RS256").await;
+
+        let first = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("generate realm key");
+        set_signing_algorithm(&fixture.pool, realm_id, "EdDSA").await;
+        let second = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("read realm key");
+
+        assert_eq!(first.id, second.id);
+        assert_eq!(second.alg, SigningAlgorithm::Rs256);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-core -- --ignored"]
+    async fn a_legacy_setting_value_still_yields_an_rsa_key() {
+        let fixture = setup().await;
+        let realm_id = insert_realm(&fixture.pool, "tenant-legacy-setting").await;
+        set_signing_algorithm(&fixture.pool, realm_id, "RSA256").await;
+
+        let key = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("generate realm key");
+
+        assert_eq!(key.alg, SigningAlgorithm::Rs256);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-core -- --ignored"]
+    async fn a_key_row_predating_the_algorithm_column_reads_as_rs256() {
+        let fixture = setup().await;
+        let realm_id = insert_realm(&fixture.pool, "tenant-prealg").await;
+
+        let (private_key, public_key) =
+            JwtKeyPair::generate(SigningAlgorithm::Rs256).expect("generate key");
+        sqlx::query(
+            "INSERT INTO jwt_keys (id, realm_id, private_key, public_key, created_at) \
+             VALUES ($1, $2, $3, $4, NOW())",
+        )
+        .bind(Uuid::new_v4())
+        .bind(Uuid::from(realm_id))
+        .bind(&private_key)
+        .bind(&public_key)
+        .execute(&fixture.pool)
+        .await
+        .expect("insert a key without kty or alg");
+
+        let key = fixture
+            .repository
+            .get_or_generate_key(realm_id)
+            .await
+            .expect("read realm key");
+
+        assert_eq!(key.alg, SigningAlgorithm::Rs256);
     }
 }

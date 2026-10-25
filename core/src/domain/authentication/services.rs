@@ -1368,7 +1368,7 @@ where
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
-        let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
+        let mut header = Header::new(jwt_key_pair.alg.jwt_algorithm());
         header.kid = Some(jwt_key_pair.id.to_string());
         let token =
             jsonwebtoken::encode(&header, &claims, &jwt_key_pair.encoding_key).map_err(|e| {
@@ -1390,7 +1390,7 @@ where
         expires_at: i64,
         key_pair: &JwtKeyPair,
     ) -> Result<Jwt, CoreError> {
-        let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
+        let mut header = Header::new(key_pair.alg.jwt_algorithm());
         header.kid = Some(key_pair.id.to_string());
         let token = jsonwebtoken::encode(&header, claims, &key_pair.encoding_key).map_err(|e| {
             tracing::error!("JWT generation error: {}", e);
@@ -2353,14 +2353,13 @@ where
 
     #[instrument(skip(self, token))]
     async fn verify_token(&self, token: String, realm_id: RealmId) -> Result<JwtClaim, CoreError> {
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-
         let jwt_key_pair = self
             .keystore_repository
             .get_or_generate_key(realm_id)
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
+        let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
         validation.validate_aud = false;
         let token_data =
             jsonwebtoken::decode::<JwtClaim>(&token, &jwt_key_pair.decoding_key, &validation)
@@ -4255,15 +4254,15 @@ where
         realm_id: RealmId,
         expected_issuer: &str,
     ) -> Result<IdTokenClaims, CoreError> {
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-        validation.validate_aud = false;
-        validation.validate_exp = false;
-
         let jwt_key_pair = self
             .keystore_repository
             .get_or_generate_key(realm_id)
             .await
             .map_err(|_| CoreError::InternalServerError)?;
+
+        let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
+        validation.validate_aud = false;
+        validation.validate_exp = false;
 
         let token_data = jsonwebtoken::decode::<IdTokenClaims>(
             id_token_hint,

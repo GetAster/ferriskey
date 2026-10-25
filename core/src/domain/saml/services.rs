@@ -7,6 +7,7 @@ use ferriskey_compass::recorder::FlowRecorder;
 use ferriskey_compass::value_objects::StepOutcome;
 use ferriskey_saml::authn::{AbsoluteUri, AuthnRequest};
 use ferriskey_saml::response::render_signed_response;
+use ferriskey_security::jwt::entities::{JwtKeyPair, SigningAlgorithm};
 use ferriskey_security::jwt::ports::KeyStoreRepository;
 use tracing::{error, warn};
 
@@ -28,6 +29,20 @@ use crate::domain::saml::entities::{
 };
 use crate::domain::saml::ports::{SamlService, SamlServiceProviderRepository};
 use crate::domain::user::ports::{UserAttributeRepository, UserRepository};
+
+/// SAML responses are signed with the realm key, and XML signatures here are
+/// RSA-SHA256 only. A realm whose key is Ed25519 therefore cannot serve SAML:
+/// refuse with a clear error rather than emit a response no service provider
+/// can verify.
+pub(crate) fn ensure_rsa_signing_key(keypair: &JwtKeyPair) -> Result<(), CoreError> {
+    match keypair.alg {
+        SigningAlgorithm::Rs256 => Ok(()),
+        other => Err(CoreError::InvalidSamlConfig(format!(
+            "SAML needs an RS256 realm signing key, but this realm signs with {}",
+            other.as_str()
+        ))),
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SamlServiceImpl<R, C, S, U, UA, A, K>
@@ -251,6 +266,8 @@ where
             .await
             .map_err(|_| CoreError::RealmKeyNotFound)?;
 
+        ensure_rsa_signing_key(&keypair)?;
+
         let certificate = keypair
             .certificate_base64_der()
             .map_err(|reason| CoreError::InvalidKey(reason.to_string()))?;
@@ -411,6 +428,15 @@ where
             }
         };
 
+        // Refuse before the user logs in, not after, when the realm cannot sign
+        // a SAML response.
+        let signing_key = self
+            .keystore_repository
+            .get_or_generate_key(scope.id())
+            .await
+            .map_err(|_| CoreError::RealmKeyNotFound)?;
+        ensure_rsa_signing_key(&signing_key)?;
+
         let redirect_uri = sso_continue_url(&input.public_base_url, scope.name());
 
         let flow_id = self.flow_recorder.start_flow(
@@ -497,6 +523,8 @@ where
             .get_or_generate_key(scope.id())
             .await
             .map_err(|_| CoreError::RealmKeyNotFound)?;
+
+        ensure_rsa_signing_key(&keypair)?;
 
         keypair
             .certificate_base64_der()
@@ -624,12 +652,18 @@ pub(crate) mod tests {
         }
     }
 
-    fn signing_material() -> &'static (String, String, String) {
-        static MATERIAL: OnceLock<(String, String, String)> = OnceLock::new();
+    fn signing_material(alg: SigningAlgorithm) -> &'static (String, String, String) {
+        static RSA: OnceLock<(String, String, String)> = OnceLock::new();
+        static ED25519: OnceLock<(String, String, String)> = OnceLock::new();
 
-        MATERIAL.get_or_init(|| {
+        let cell = match alg {
+            SigningAlgorithm::Rs256 => &RSA,
+            SigningAlgorithm::EdDsa => &ED25519,
+        };
+
+        cell.get_or_init(|| {
             let (private_pem, public_pem) =
-                JwtKeyPair::generate().expect("the test suite needs one rsa key pair");
+                JwtKeyPair::generate(alg).expect("the test suite needs one key pair");
             let certificate = JwtKeyPair::self_signed_certificate(&private_pem, "auth.example.com")
                 .expect("the test suite needs one self-signed certificate");
 
@@ -637,11 +671,12 @@ pub(crate) mod tests {
         })
     }
 
-    fn key_store() -> FixedKeyStore {
-        let (private_pem, public_pem, certificate) = signing_material();
+    fn key_store(alg: SigningAlgorithm) -> FixedKeyStore {
+        let (private_pem, public_pem, certificate) = signing_material(alg);
 
         FixedKeyStore {
             keypair: JwtKeyPair::from_pem(
+                alg,
                 private_pem,
                 public_pem,
                 certificate,
@@ -830,6 +865,7 @@ pub(crate) mod tests {
         auth_session_repository: MockAuthSessionRepository,
         flow_recorder: FlowRecorder,
         compass_events: Option<mpsc::Receiver<CompassEvent>>,
+        key_alg: SigningAlgorithm,
     }
 
     impl Harness {
@@ -849,7 +885,14 @@ pub(crate) mod tests {
                 auth_session_repository: MockAuthSessionRepository::new(),
                 flow_recorder: FlowRecorder::new(compass_sender),
                 compass_events: Some(compass_events),
+                key_alg: SigningAlgorithm::Rs256,
             }
+        }
+
+        fn with_realm_key(mut self, alg: SigningAlgorithm) -> Self {
+            self.key_alg = alg;
+
+            self
         }
 
         fn with_realm(mut self) -> Self {
@@ -930,7 +973,7 @@ pub(crate) mod tests {
                 Arc::new(self.user_repository),
                 Arc::new(self.user_attribute_repository),
                 Arc::new(self.auth_session_repository),
-                Arc::new(key_store()),
+                Arc::new(key_store(self.key_alg)),
                 self.flow_recorder,
             )
         }
@@ -1021,6 +1064,64 @@ pub(crate) mod tests {
         assert_eq!(output.session.state.as_deref(), Some("relay-me"));
         assert_eq!(output.session.response_type, None);
         assert_eq!(output.session.scope, None);
+    }
+
+    #[tokio::test]
+    async fn a_started_sso_is_refused_in_a_realm_that_signs_with_ed25519() {
+        let harness = Harness::new()
+            .with_realm()
+            .with_client()
+            .with_registered_service_provider(NameIdFormat::EmailAddress)
+            .with_realm_key(SigningAlgorithm::EdDsa);
+
+        let error = refusal(
+            harness
+                .build()
+                .start_sso(start_input(None, Some(REGISTERED_ACS)))
+                .await,
+            "SAML cannot be signed with an Ed25519 realm key",
+        );
+
+        assert!(
+            matches!(&error, CoreError::InvalidSamlConfig(reason) if reason.contains("EdDSA")),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_idp_metadata_is_refused_in_a_realm_that_signs_with_ed25519() {
+        let service = Harness::new()
+            .with_realm()
+            .with_realm_key(SigningAlgorithm::EdDsa)
+            .build();
+
+        let error = refusal(
+            service
+                .idp_signing_certificate(REALM_NAME.to_string())
+                .await,
+            "no RSA certificate exists to publish",
+        );
+
+        assert!(
+            matches!(error, CoreError::InvalidSamlConfig(_)),
+            "{error:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_finished_sso_mints_no_assertion_in_a_realm_that_signs_with_ed25519() {
+        let mut finish = FinishHarness::new(NameIdFormat::EmailAddress, Vec::new());
+        finish.harness.key_alg = SigningAlgorithm::EdDsa;
+
+        let error = refusal(
+            finish.finish().await,
+            "SAML cannot be signed with an Ed25519 realm key",
+        );
+
+        assert!(
+            matches!(error, CoreError::InvalidSamlConfig(_)),
+            "{error:?}"
+        );
     }
 
     #[tokio::test]

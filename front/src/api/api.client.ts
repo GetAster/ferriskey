@@ -677,7 +677,10 @@ export namespace Schemas {
   export type ForgotPasswordResponse = unknown;
   export type GenerateRecoveryCodesRequest = { amount: number; code_format: string; elevation_id: string };
   export type GenerateRecoveryCodesResponse = { codes: Array<string> };
-  export type JwkKey = { alg: string; e: string; kid: string; kty: string; n: string; use: string };
+  export type JwkKey = { alg: string; kid: string; kty: string; use: string } & (
+    | { e: string; n: string }
+    | { crv: string; x: string }
+  );
   export type GetCertsResponse = { keys: Array<JwkKey> };
   export type GetClientResponse = { data: Client };
   export type GetClientRolesResponse = { data: Array<Role> };
