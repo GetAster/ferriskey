@@ -176,6 +176,7 @@ fn refusal(realm_name: &str, error: CoreError) -> Response {
         | CoreError::InvalidClient
         | CoreError::ClientNotFound
         | CoreError::SamlConfigNotFound
+        | CoreError::InvalidSamlConfig(_)
         | CoreError::InvalidRedirectUri => (StatusCode::BAD_REQUEST, REFUSED_REQUEST),
         _ => (StatusCode::INTERNAL_SERVER_ERROR, UNAVAILABLE),
     };

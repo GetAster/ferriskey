@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use ferriskey_security::jwt::entities::{ClaimsTyp, JwtClaim, JwtKeyPair};
+use ferriskey_security::jwt::entities::{ClaimsTyp, JwtClaim, JwtKeyPair, SigningAlgorithm};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use uuid::Uuid;
 
@@ -18,7 +18,8 @@ fn access_token_claims() -> JwtClaim {
 }
 
 fn token_signing(c: &mut Criterion) {
-    let (private_pem, public_pem) = JwtKeyPair::generate().expect("generate an RSA key pair");
+    let (private_pem, public_pem) =
+        JwtKeyPair::generate(SigningAlgorithm::Rs256).expect("generate an RSA key pair");
     let encoding_key = EncodingKey::from_rsa_pem(private_pem.as_bytes()).expect("encoding key");
     let decoding_key = DecodingKey::from_rsa_pem(public_pem.as_bytes()).expect("decoding key");
     let header = Header::new(Algorithm::RS256);
@@ -27,6 +28,7 @@ fn token_signing(c: &mut Criterion) {
     let certificate =
         JwtKeyPair::self_signed_certificate(&private_pem, "bench").expect("certificate");
     let key_pair = JwtKeyPair::from_pem(
+        SigningAlgorithm::Rs256,
         &private_pem,
         &public_pem,
         &certificate,
@@ -48,7 +50,7 @@ fn token_signing(c: &mut Criterion) {
     c.bench_function("rs256 sign an access token with a kept key", |b| {
         b.iter(|| {
             signer
-                .sign_rs256(black_box(signing_input.as_bytes()))
+                .sign(black_box(signing_input.as_bytes()))
                 .expect("sign the access token")
         })
     });
