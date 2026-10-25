@@ -7,15 +7,16 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 ## Branch and tag model
 
 - `main` is upstream `main` plus one commit: the Aster README preamble and this ledger. Nothing is built from `main`. It is refreshed with `git merge upstream/main` and is never reset or force-pushed. Ledger edits are commits on `main`, never on `upgrade/*`.
-- `upgrade/ferriskey-v<upstream version>` (for example `upgrade/ferriskey-v0.9.0`) is the patched integration line: an upstream release tag plus the patches in this ledger. A new upstream release always gets a new branch, cut from its tag; Aster-only fixes append to the current branch. Upstream `main` moves quickly before 1.0, so upgrade branches follow release tags only, never upstream `main`. Published `upgrade/*` branches and tags are never rewritten.
-- Topic branches carry one change each, are named for the change (for example `feat/eddsa-signing`), are based on the upstream release tag (or on a prerequisite patch's commit, which its row names), and are cherry-picked with `git cherry-pick -x` onto the upgrade branch, so every upgrade-branch commit names its source. Re-cutting a topic onto a new upstream release takes a versioned name, `<topic>-v<upstream version>`.
-- Tags: `aster-ferriskey-v<upstream version>-<n>`, where `n` counts Aster builds on that upstream release (`aster-ferriskey-v0.9.0-1`, `-2`, …). The container image built from a tag carries the same tag, and `aster-idp` pins the image by digest. A tag is created only after `aster-idp`'s tests pass against that exact commit, because tags cannot be moved.
+- The current patched line is `upgrade/ferriskey-main-9a7d5d8c`: upstream `main` at the pinned commit `9a7d5d8c`, plus the patches in this ledger. By owner decision (2026-10-25) it is based on upstream `main` rather than a release tag, because the changes this fork needs (sealed realm keys, signing-key cache, aws-lc-rs signing) have landed after `v0.9.0`. It moves to the next upstream release tag as soon as one ships, and from then on follows release tags only: `upgrade/ferriskey-v<upstream version>` is cut from the tag and the patches are cherry-picked onto it. Never track upstream `main` beyond the pinned commit. Aster-only fixes append to the current branch. Published `upgrade/*` branches and tags are never rewritten.
+- `upgrade/ferriskey-v0.9.0` was published on Forge before that decision. It is superseded, left unchanged and carries no patches.
+- Topic branches carry one change each, are named for the change (for example `feat/eddsa-signing`), are based on the upstream commit the upgrade branch is cut from (a release tag, or the pinned `main` commit for the current line), or on a prerequisite patch's commit, which its row names), and are cherry-picked with `git cherry-pick -x` onto the upgrade branch, so every upgrade-branch commit names its source. Re-cutting a topic onto a new upstream release takes a versioned name, `<topic>-v<upstream version>`.
+- Tags: `aster-ferriskey-v<upstream version>-<n>`, where `n` counts Aster builds on that upstream release (`aster-ferriskey-v0.9.0-1`, `-2`, …); on the pinned-`main` line the upstream part is `main-9a7d5d8c` (`aster-ferriskey-main-9a7d5d8c-1`, …). The container image built from a tag carries the same tag, and `aster-idp` pins the image by digest. A tag is created only after `aster-idp`'s tests pass against that exact commit, because tags cannot be moved.
 - Forge (`forge.emrul.dev/Aster/ferriskey`) is canonical and push-mirrors to `github.com/getaster/ferriskey`. Never push to GitHub or upstream directly.
 - Aster does not submit patches upstream; upstream maintainers are welcome to take any patch here.
 
 ## Current release
 
-None yet. The first upgrade branch is `upgrade/ferriskey-v0.9.0`, cut from upstream `v0.9.0` (commit `93ffe7c9`).
+None yet. The current line is `upgrade/ferriskey-main-9a7d5d8c`, cut from upstream `main` at `9a7d5d8c`.
 
 | Tag | Commit | Image digest |
 | --- | --- | --- |
@@ -24,5 +25,6 @@ None yet. The first upgrade branch is `upgrade/ferriskey-v0.9.0`, cut from upstr
 
 | # | Topic branch | Summary | Upstream status |
 | --- | --- | --- | --- |
+| 1 | `feat/eddsa-signing-main` | Per-key signing algorithm on the `jwt_keys` row (`kty`, `alg`); EdDSA (Ed25519) realm keys, OKP JWKS (RFC 8037), discovery lists the realm's algorithms; `default_signing_algorithm` accepts `RS256`/`EdDSA` and chooses the type of newly generated keys; SAML refused in EdDSA realms. | Not submitted; `fa9901dc` (aws-lc-rs signing) is already in the base. |
 
 Planned patches are described in Aster's `aster-idp` design (`_internal/docs/agentIdentity/`), not here, until they land.
