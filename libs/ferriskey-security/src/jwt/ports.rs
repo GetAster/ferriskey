@@ -143,9 +143,54 @@ pub trait AccessTokenRepository: Send + Sync {
     ) -> impl Future<Output = Result<u64, SecurityError>> + Send;
 }
 
+/// What a rotation changed, by `kid`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
+pub struct KeyRotation {
+    /// The key that signs from now on.
+    pub active: Uuid,
+    /// The key that signed until now and keeps verifying until it is purged
+    /// from the JWKS, if the realm had one.
+    pub retired: Option<Uuid>,
+    /// The staged key, if one is waiting for promotion.
+    pub next: Option<Uuid>,
+}
+
+/// A realm's signing keys: one `active` key signs, an optional `next` key is
+/// published ahead of promotion, and `retired` keys keep verifying (and stay in
+/// the JWKS) until every token they could have signed has expired.
 pub trait KeyStoreRepository: Send + Sync {
+    /// The realm's active signing key, generated on first use.
     fn get_or_generate_key(
         &self,
         realm_id: RealmId,
     ) -> impl Future<Output = Result<JwtKeyPair, SecurityError>> + Send;
+
+    /// The key with this `kid` if it may still verify tokens of the realm:
+    /// active, next, or retired and not yet expired. `None` otherwise.
+    fn get_verification_key(
+        &self,
+        realm_id: RealmId,
+        kid: Uuid,
+    ) -> impl Future<Output = Result<Option<JwtKeyPair>, SecurityError>> + Send;
+
+    /// The keys the JWKS publishes: active, next, and retired keys that can
+    /// still verify an unexpired token.
+    fn published_keys(
+        &self,
+        realm_id: RealmId,
+    ) -> impl Future<Output = Result<Vec<JwtKeyPair>, SecurityError>> + Send;
+
+    /// Generates the `next` key, of the type the realm setting asks for, unless
+    /// one is already staged. Does not change what signs.
+    fn stage_next_key(
+        &self,
+        realm_id: RealmId,
+    ) -> impl Future<Output = Result<KeyRotation, SecurityError>> + Send;
+
+    /// Promotes `next` (staging it first when absent) to `active` and retires
+    /// the previous active key.
+    fn rotate_key(
+        &self,
+        realm_id: RealmId,
+    ) -> impl Future<Output = Result<KeyRotation, SecurityError>> + Send;
 }

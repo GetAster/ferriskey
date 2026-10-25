@@ -1361,6 +1361,30 @@ where
         self.resolve_token_lifetimes(scope, &client).await
     }
 
+    /// The key that signed `token`, chosen by the `kid` in its header from the
+    /// keys the realm still honours. The algorithm to verify with is the key's
+    /// own, never the header's: a token cannot pick how it is checked.
+    /// `None` for a token without a usable `kid` or signed by a key the realm
+    /// no longer (or never) held.
+    async fn verification_key_for(
+        &self,
+        token: &str,
+        realm_id: RealmId,
+    ) -> Result<Option<JwtKeyPair>, CoreError> {
+        let Some(kid) = jsonwebtoken::decode_header(token)
+            .ok()
+            .and_then(|header| header.kid)
+            .and_then(|kid| Uuid::parse_str(&kid).ok())
+        else {
+            return Ok(None);
+        };
+
+        self.keystore_repository
+            .get_verification_key(realm_id, kid)
+            .await
+            .map_err(|_| CoreError::InternalServerError)
+    }
+
     async fn generate_token(&self, claims: JwtClaim, realm_id: RealmId) -> Result<Jwt, CoreError> {
         let jwt_key_pair = self
             .keystore_repository
@@ -2354,10 +2378,11 @@ where
     #[instrument(skip(self, token))]
     async fn verify_token(&self, token: String, realm_id: RealmId) -> Result<JwtClaim, CoreError> {
         let jwt_key_pair = self
-            .keystore_repository
-            .get_or_generate_key(realm_id)
-            .await
-            .map_err(|_| CoreError::InternalServerError)?;
+            .verification_key_for(&token, realm_id)
+            .await?
+            .ok_or_else(|| {
+                CoreError::TokenValidationError("InvalidToken: unknown signing key".to_string())
+            })?;
 
         let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
         validation.validate_aud = false;
@@ -4255,10 +4280,9 @@ where
         expected_issuer: &str,
     ) -> Result<IdTokenClaims, CoreError> {
         let jwt_key_pair = self
-            .keystore_repository
-            .get_or_generate_key(realm_id)
-            .await
-            .map_err(|_| CoreError::InternalServerError)?;
+            .verification_key_for(id_token_hint, realm_id)
+            .await?
+            .ok_or(CoreError::InvalidToken)?;
 
         let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
         validation.validate_aud = false;
@@ -4658,17 +4682,16 @@ where
     async fn get_certs(&self, realm_name: String) -> Result<Vec<JwkKey>, CoreError> {
         let scope = RealmScope::resolve(self.realm_repository.as_ref(), &realm_name).await?;
 
-        let jwk_keypair = self
-            .keystore_repository
-            .get_or_generate_key(scope.id())
+        self.keystore_repository
+            .published_keys(scope.id())
             .await
-            .map_err(|_| CoreError::RealmKeyNotFound)?;
-
-        let jwk_key = jwk_keypair
-            .to_jwk_key()
-            .map_err(|e| CoreError::InvalidKey(e.to_string()))?;
-
-        Ok(vec![jwk_key])
+            .map_err(|_| CoreError::RealmKeyNotFound)?
+            .iter()
+            .map(|key| {
+                key.to_jwk_key()
+                    .map_err(|e| CoreError::InvalidKey(e.to_string()))
+            })
+            .collect()
     }
 
     #[instrument(

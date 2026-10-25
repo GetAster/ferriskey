@@ -650,6 +650,35 @@ pub(crate) mod tests {
         ) -> Result<JwtKeyPair, SecurityError> {
             Ok(self.keypair.clone())
         }
+
+        async fn get_verification_key(
+            &self,
+            _realm_id: RealmId,
+            kid: Uuid,
+        ) -> Result<Option<JwtKeyPair>, SecurityError> {
+            Ok((kid == self.keypair.id).then(|| self.keypair.clone()))
+        }
+
+        async fn published_keys(
+            &self,
+            _realm_id: RealmId,
+        ) -> Result<Vec<JwtKeyPair>, SecurityError> {
+            Ok(vec![self.keypair.clone()])
+        }
+
+        async fn stage_next_key(
+            &self,
+            _realm_id: RealmId,
+        ) -> Result<ferriskey_security::jwt::ports::KeyRotation, SecurityError> {
+            Err(SecurityError::RealmKeyNotFound)
+        }
+
+        async fn rotate_key(
+            &self,
+            _realm_id: RealmId,
+        ) -> Result<ferriskey_security::jwt::ports::KeyRotation, SecurityError> {
+            Err(SecurityError::RealmKeyNotFound)
+        }
     }
 
     fn signing_material(alg: SigningAlgorithm) -> &'static (String, String, String) {

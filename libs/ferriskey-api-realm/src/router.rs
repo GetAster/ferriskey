@@ -16,6 +16,9 @@ use super::handlers::resource_owners::{
     __path_get_resource_owners, __path_replace_resource_owners, get_resource_owners,
     replace_resource_owners,
 };
+use super::handlers::signing_keys::{
+    __path_rotate_signing_key, __path_stage_signing_key, rotate_signing_key, stage_signing_key,
+};
 use super::handlers::update_password_policy::{
     __path_update_password_policy, update_password_policy,
 };
@@ -35,6 +38,8 @@ use utoipa::OpenApi;
     update_realm,
     delete_realm,
     update_realm_setting,
+    stage_signing_key,
+    rotate_signing_key,
     get_resource_owners,
     replace_resource_owners,
     get_user_realms,
@@ -86,6 +91,20 @@ pub fn realm_routes(state: AppState) -> Router<AppState> {
                 state.args.server.root_path
             ),
             put(update_realm_setting),
+        )
+        .route(
+            &format!(
+                "{}/realms/{{realm_name}}/keys/next",
+                state.args.server.root_path
+            ),
+            post(stage_signing_key),
+        )
+        .route(
+            &format!(
+                "{}/realms/{{realm_name}}/keys/rotate",
+                state.args.server.root_path
+            ),
+            post(rotate_signing_key),
         )
         .route(
             &format!(

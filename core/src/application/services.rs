@@ -7,9 +7,12 @@ use sea_orm::DatabaseConnection;
 
 use crate::domain::authentication::client_authentication::{ClientGrant, authenticate_client};
 use crate::domain::client::entities::Client;
+use crate::domain::common::policies::ensure_policy;
 use crate::domain::jwt::entities::{Jwt, JwtClaim};
 use crate::domain::realm::entities::{RealmId, RealmScope};
+use crate::domain::realm::ports::RealmPolicy;
 use crate::domain::user::entities::User;
+use ferriskey_security::jwt::ports::{KeyRotation, KeyStoreRepository};
 
 use crate::{
     application::migrate::{build_runner, context::MigrationContext},
@@ -715,6 +718,75 @@ impl CoreService for ApplicationService {
 }
 
 impl ApplicationService {
+    /// Generates the realm's `next` signing key, of the type its
+    /// `default_signing_algorithm` setting asks for, so it can be published in
+    /// the JWKS before it signs anything. Needs the right to update the realm.
+    pub async fn stage_realm_signing_key(
+        &self,
+        identity: Identity,
+        realm_name: String,
+    ) -> Result<KeyRotation, CoreError> {
+        let scope = self
+            .authorize_signing_key_change(&identity, &realm_name)
+            .await?;
+
+        let outcome = self
+            .auth_service
+            .keystore_repository
+            .stage_next_key(scope.id())
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        tracing::info!(realm = %realm_name, next = ?outcome.next, "staged the next realm signing key");
+
+        Ok(outcome)
+    }
+
+    /// Promotes the realm's `next` signing key (staging one first when there is
+    /// none) and retires the key that signed until now. Needs the right to
+    /// update the realm.
+    pub async fn rotate_realm_signing_key(
+        &self,
+        identity: Identity,
+        realm_name: String,
+    ) -> Result<KeyRotation, CoreError> {
+        let scope = self
+            .authorize_signing_key_change(&identity, &realm_name)
+            .await?;
+
+        let outcome = self
+            .auth_service
+            .keystore_repository
+            .rotate_key(scope.id())
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        tracing::info!(
+            realm = %realm_name,
+            active = %outcome.active,
+            retired = ?outcome.retired,
+            "rotated the realm signing key"
+        );
+
+        Ok(outcome)
+    }
+
+    async fn authorize_signing_key_change(
+        &self,
+        identity: &Identity,
+        realm_name: &str,
+    ) -> Result<RealmScope, CoreError> {
+        let scope =
+            RealmScope::resolve(self.realm_service.realm_repository.as_ref(), realm_name).await?;
+        ensure_policy(
+            self.realm_service
+                .policy
+                .can_update_realm(identity, scope.realm())
+                .await,
+            "insufficient permissions",
+        )?;
+
+        Ok(scope)
+    }
+
     pub async fn get_password_policy(
         &self,
         identity: Identity,
