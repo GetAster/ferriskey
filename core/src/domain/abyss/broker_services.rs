@@ -957,7 +957,7 @@ mod tests {
     use super::*;
 
     use chrono::Duration;
-    use ferriskey_security::jwt::entities::JwtKeyPair;
+    use ferriskey_security::jwt::entities::{JwkMaterial, JwtKeyPair, SigningAlgorithm};
     use uuid::Uuid;
 
     const ISSUER: &str = "https://idp.example.com";
@@ -969,11 +969,20 @@ mod tests {
     }
 
     fn idp_key(kid: &str) -> IdpKey {
-        let (private_pem, public_pem) = JwtKeyPair::generate().expect("generate rsa key");
-        let key_pair =
-            JwtKeyPair::from_pem(&private_pem, &public_pem, "", Uuid::nil(), Uuid::nil())
-                .expect("idp key pair");
-        let public = key_pair.to_jwk_key().expect("idp jwk");
+        let (private_pem, public_pem) =
+            JwtKeyPair::generate(SigningAlgorithm::Rs256).expect("generate rsa key");
+        let key_pair = JwtKeyPair::from_pem(
+            SigningAlgorithm::Rs256,
+            &private_pem,
+            &public_pem,
+            "",
+            Uuid::nil(),
+            Uuid::nil(),
+        )
+        .expect("idp key pair");
+        let JwkMaterial::Rsa { n, e } = key_pair.to_jwk_key().expect("idp jwk").material else {
+            panic!("an rsa key publishes n and e");
+        };
         let encoding = key_pair.encoding_key;
         let jwks = serde_json::json!({
             "keys": [{
@@ -981,8 +990,8 @@ mod tests {
                 "use": "sig",
                 "kid": kid,
                 "alg": "RS256",
-                "n": public.n,
-                "e": public.e,
+                "n": n,
+                "e": e,
             }]
         });
 

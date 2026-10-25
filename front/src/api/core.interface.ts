@@ -75,9 +75,8 @@ export interface RealmSettings {
 }
 
 export enum SigningAlgorithm {
-  HS256 = 'HS256',
   RS256 = 'RS256',
-  ES256 = 'ES256',
+  EdDSA = 'EdDSA',
 }
 
 export interface Role {

@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::domain::common::locale::{Locale, SupportedLocales};
 use crate::domain::common::pagination::{Page, PageRequest};
+use crate::domain::jwt::entities::SigningAlgorithm;
 use crate::domain::realm::entities::RealmId;
 use crate::domain::realm::entities::{RealmFilter, RealmSortField};
 use crate::domain::realm::{
@@ -298,6 +299,9 @@ impl RealmRepository for PostgresRealmRepository {
         let mut realm_setting: crate::entity::realm_settings::ActiveModel = realm_setting.into();
 
         if let Some(algorithm) = algorithm {
+            // Only algorithms the server can sign with: anything else would be
+            // stored and then ignored when the realm key is generated.
+            SigningAlgorithm::parse(&algorithm).map_err(|_| CoreError::Invalid)?;
             realm_setting.default_signing_algorithm = Set(Some(algorithm));
         }
 

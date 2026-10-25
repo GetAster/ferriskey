@@ -1,0 +1,3 @@
+ALTER TABLE jwt_keys DROP CONSTRAINT IF EXISTS jwt_keys_kty_alg_check;
+ALTER TABLE jwt_keys DROP COLUMN IF EXISTS alg;
+ALTER TABLE jwt_keys DROP COLUMN IF EXISTS kty;

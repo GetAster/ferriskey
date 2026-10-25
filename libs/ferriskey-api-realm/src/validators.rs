@@ -1,4 +1,7 @@
-use ferriskey_core::domain::realm::entities::{LoginAliases, ResourceOwner};
+use ferriskey_core::domain::{
+    jwt::entities::SigningAlgorithm,
+    realm::entities::{LoginAliases, ResourceOwner},
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -31,6 +34,7 @@ pub struct UpdateRealmValidator {
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
 pub struct UpdateRealmSettingValidator {
+    #[validate(custom(function = "validate_signing_algorithm"))]
     pub default_signing_algorithm: Option<String>,
 
     pub user_registration_enabled: Option<bool>,
@@ -228,6 +232,14 @@ fn validate_cimd_allowed_hosts(values: &[String]) -> Result<(), validator::Valid
     }
 }
 
+/// The server can sign with RS256 and EdDSA only; any other algorithm would be
+/// stored and then silently ignored when the realm key is generated.
+fn validate_signing_algorithm(value: &str) -> Result<(), validator::ValidationError> {
+    SigningAlgorithm::parse(value).map(|_| ()).map_err(|_| {
+        validator::ValidationError::new("default_signing_algorithm must be one of: RS256, EdDSA")
+    })
+}
+
 fn validate_encryption(value: &str) -> Result<(), validator::ValidationError> {
     match value {
         "tls" | "starttls" | "none" => Ok(()),
@@ -242,6 +254,37 @@ mod update_realm_setting_validator_tests {
     use super::UpdateRealmSettingValidator;
     use ferriskey_core::domain::realm::entities::LoginAlias;
     use serde_json::json;
+    use validator::Validate;
+
+    fn validate_algorithm(value: &str) -> bool {
+        let v: UpdateRealmSettingValidator =
+            serde_json::from_value(json!({ "default_signing_algorithm": value }))
+                .expect("a string deserializes");
+        v.validate().is_ok()
+    }
+
+    #[test]
+    fn signing_algorithm_accepts_rs256_and_eddsa() {
+        assert!(validate_algorithm("RS256"));
+        assert!(validate_algorithm("EdDSA"));
+    }
+
+    #[test]
+    fn signing_algorithm_rejects_what_the_server_cannot_sign() {
+        for rejected in ["HS256", "ES256", "RS512", "eddsa", ""] {
+            assert!(
+                !validate_algorithm(rejected),
+                "{rejected:?} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn signing_algorithm_may_be_omitted() {
+        let v: UpdateRealmSettingValidator =
+            serde_json::from_value(json!({})).expect("empty payload");
+        assert!(v.validate().is_ok());
+    }
 
     #[test]
     fn empty_login_aliases_is_rejected() {

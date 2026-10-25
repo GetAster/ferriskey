@@ -15,14 +15,22 @@ use serde::{Deserialize, Serialize};
 pub struct JwkKey {
     #[serde(rename = "alg")]
     pub alg: String,
-    #[serde(rename = "e")]
-    pub e: String,
+    /// RSA public exponent (`kty` = `RSA`).
+    #[serde(rename = "e", skip_serializing_if = "Option::is_none")]
+    pub e: Option<String>,
+    /// Curve name, `Ed25519` (`kty` = `OKP`, RFC 8037).
+    #[serde(rename = "crv", skip_serializing_if = "Option::is_none")]
+    pub crv: Option<String>,
+    /// Ed25519 public key (`kty` = `OKP`, RFC 8037).
+    #[serde(rename = "x", skip_serializing_if = "Option::is_none")]
+    pub x: Option<String>,
     #[serde(rename = "kid")]
     pub kid: String,
     #[serde(rename = "kty")]
     pub kty: String,
-    #[serde(rename = "n")]
-    pub n: String,
+    /// RSA modulus (`kty` = `RSA`).
+    #[serde(rename = "n", skip_serializing_if = "Option::is_none")]
+    pub n: Option<String>,
     #[serde(rename = "use")]
     pub r#use: String,
     #[serde(rename = "x5c")]
@@ -34,10 +42,10 @@ pub struct JwkKey {
 impl JwkKey {
     pub fn new(
         alg: String,
-        e: String,
+        e: Option<String>,
         kid: String,
         kty: String,
-        n: String,
+        n: Option<String>,
         r#use: String,
         x5c: Vec<String>,
         x5t: String,
@@ -45,6 +53,8 @@ impl JwkKey {
         JwkKey {
             alg,
             e,
+            crv: None,
+            x: None,
             kid,
             kty,
             n,

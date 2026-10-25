@@ -269,12 +269,13 @@ mod tests {
 
     async fn create_client(
         server: &TestServer,
+        realm: &str,
         backchannel_logout_uri: Option<&str>,
     ) -> TestClient {
         let master = master_token(server).await;
         let client_id = format!("app-{}", Uuid::new_v4().simple());
         let response = server
-            .post(&format!("/realms/{REALM}/clients"))
+            .post(&format!("/realms/{realm}/clients"))
             .add_header("Authorization", auth_header(&master))
             .json(&json!({
                 "client_id": client_id,
@@ -300,8 +301,13 @@ mod tests {
         };
 
         if let Some(uri) = backchannel_logout_uri {
-            let response =
-                update_client(server, &client, json!({ "backchannel_logout_uri": uri })).await;
+            let response = update_client(
+                server,
+                realm,
+                &client,
+                json!({ "backchannel_logout_uri": uri }),
+            )
+            .await;
             assert_eq!(response.status_code(), 200, "{}", response.text());
         }
         client
@@ -309,12 +315,13 @@ mod tests {
 
     async fn update_client(
         server: &TestServer,
+        realm: &str,
         client: &TestClient,
         body: Value,
     ) -> axum_test::TestResponse {
         let master = master_token(server).await;
         server
-            .patch(&format!("/realms/{REALM}/clients/{}", client.uuid))
+            .patch(&format!("/realms/{realm}/clients/{}", client.uuid))
             .add_header("Authorization", auth_header(&master))
             .json(&body)
             .await
@@ -325,11 +332,11 @@ mod tests {
         username: String,
     }
 
-    async fn create_user(server: &TestServer) -> TestUser {
+    async fn create_user(server: &TestServer, realm: &str) -> TestUser {
         let master = master_token(server).await;
         let username = format!("user-{}", Uuid::new_v4().simple());
         let response = server
-            .post(&format!("/realms/{REALM}/users"))
+            .post(&format!("/realms/{realm}/users"))
             .add_header("Authorization", auth_header(&master))
             .json(&json!({
                 "username": username,
@@ -346,7 +353,7 @@ mod tests {
             .to_string();
 
         let response = server
-            .put(&format!("/realms/{REALM}/users/{id}/reset-password"))
+            .put(&format!("/realms/{realm}/users/{id}/reset-password"))
             .add_header("Authorization", auth_header(&master))
             .json(&json!({ "value": PASSWORD, "temporary": false, "credential_type": "password" }))
             .await;
@@ -355,9 +362,14 @@ mod tests {
     }
 
     /// Logs `user` in through `client`; the password grant opens a session.
-    async fn sign_in(server: &TestServer, client: &TestClient, user: &TestUser) -> Value {
+    async fn sign_in(
+        server: &TestServer,
+        realm: &str,
+        client: &TestClient,
+        user: &TestUser,
+    ) -> Value {
         let response = server
-            .post(&token_path(REALM))
+            .post(&token_path(realm))
             .form(&[
                 ("grant_type", "password"),
                 ("client_id", client.client_id.as_str()),
@@ -382,10 +394,10 @@ mod tests {
     }
 
     /// Verifies `token` against the realm JWKS and returns its claims.
-    async fn verified(server: &TestServer, token: &str, audience: &str) -> Value {
+    async fn verified(server: &TestServer, realm: &str, token: &str, audience: &str) -> Value {
         let jwks: Value = server
             .get(&format!(
-                "/realms/{REALM}/protocol/openid-connect/jwks.json"
+                "/realms/{realm}/protocol/openid-connect/jwks.json"
             ))
             .await
             .json();
@@ -396,12 +408,27 @@ mod tests {
             .iter()
             .find(|key| key["kid"] == json!(kid))
             .expect("the signing key is published");
-        let decoding = DecodingKey::from_rsa_components(
-            key["n"].as_str().expect("n"),
-            key["e"].as_str().expect("e"),
-        )
-        .expect("RSA key");
-        let mut validation = Validation::new(Algorithm::RS256);
+        let (decoding, algorithm) = match key["kty"].as_str().expect("kty") {
+            "RSA" => (
+                DecodingKey::from_rsa_components(
+                    key["n"].as_str().expect("n"),
+                    key["e"].as_str().expect("e"),
+                )
+                .expect("RSA key"),
+                Algorithm::RS256,
+            ),
+            "OKP" => {
+                assert_eq!(key["crv"], json!("Ed25519"));
+                (
+                    DecodingKey::from_ed_components(key["x"].as_str().expect("x"))
+                        .expect("Ed25519 key"),
+                    Algorithm::EdDSA,
+                )
+            }
+            other => panic!("unexpected key type {other}"),
+        };
+        assert_eq!(header(token)["alg"], json!(key["alg"]));
+        let mut validation = Validation::new(algorithm);
         validation.set_audience(&[audience]);
         validation.set_required_spec_claims(&["iss", "aud", "iat", "exp"]);
         jsonwebtoken::decode::<Value>(token, &decoding, &validation)
@@ -415,9 +442,9 @@ mod tests {
         rt().block_on(async {
             let server = make_server();
             let rp = fake_relying_party().await;
-            let client = create_client(&server, Some(&rp.endpoint)).await;
-            let user = create_user(&server).await;
-            let tokens = sign_in(&server, &client, &user).await;
+            let client = create_client(&server, REALM, Some(&rp.endpoint)).await;
+            let user = create_user(&server, REALM).await;
+            let tokens = sign_in(&server, REALM, &client, &user).await;
             let access = payload(tokens["access_token"].as_str().expect("access_token"));
 
             let response = server
@@ -438,7 +465,7 @@ mod tests {
             let token = &received[0];
             assert_eq!(header(token)["typ"], json!("logout+jwt"));
 
-            let claims = verified(&server, token, &client.client_id).await;
+            let claims = verified(&server, REALM, token, &client.client_id).await;
             assert_eq!(claims["iss"], access["iss"]);
             assert_eq!(claims["aud"], json!(client.client_id));
             assert_eq!(claims["sub"], json!(user.id));
@@ -449,15 +476,118 @@ mod tests {
         });
     }
 
+    const EDDSA_REALM: &str = "backchannel-eddsa";
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    fn an_eddsa_realm_signs_tokens_and_logout_tokens_with_ed25519() {
+        rt().block_on(async {
+            let server = make_server();
+            let master = master_token(&server).await;
+
+            let response = server
+                .post("/realms")
+                .add_header("Authorization", auth_header(&master))
+                .json(&json!({ "name": EDDSA_REALM, "display_name": EDDSA_REALM }))
+                .await;
+            assert_eq!(response.status_code(), 201, "{}", response.text());
+
+            let rejected = server
+                .put(&format!("/realms/{EDDSA_REALM}/settings"))
+                .add_header("Authorization", auth_header(&master))
+                .json(&json!({ "default_signing_algorithm": "HS256" }))
+                .await;
+            assert_eq!(rejected.status_code(), 422, "{}", rejected.text());
+
+            let response = server
+                .put(&format!("/realms/{EDDSA_REALM}/settings"))
+                .add_header("Authorization", auth_header(&master))
+                .json(&json!({ "default_signing_algorithm": "EdDSA" }))
+                .await;
+            assert_eq!(response.status_code(), 200, "{}", response.text());
+
+            let rp = fake_relying_party().await;
+            let client = create_client(&server, EDDSA_REALM, Some(&rp.endpoint)).await;
+            let user = create_user(&server, EDDSA_REALM).await;
+            let tokens = sign_in(&server, EDDSA_REALM, &client, &user).await;
+
+            let access = tokens["access_token"].as_str().expect("access_token");
+            assert_eq!(header(access)["alg"], json!("EdDSA"));
+            assert_eq!(
+                header(tokens["id_token"].as_str().expect("id_token"))["alg"],
+                json!("EdDSA")
+            );
+
+            let jwks: Value = server
+                .get(&format!(
+                    "/realms/{EDDSA_REALM}/protocol/openid-connect/jwks.json"
+                ))
+                .await
+                .json();
+            let keys = jwks["keys"].as_array().expect("keys");
+            assert_eq!(keys.len(), 1);
+            assert_eq!(keys[0]["kty"], json!("OKP"));
+            assert_eq!(keys[0]["crv"], json!("Ed25519"));
+            assert_eq!(keys[0]["alg"], json!("EdDSA"));
+            assert_eq!(keys[0]["use"], json!("sig"));
+            assert!(keys[0].get("n").is_none());
+
+            let discovery: Value = server
+                .get(&format!(
+                    "/realms/{EDDSA_REALM}/.well-known/openid-configuration"
+                ))
+                .await
+                .json();
+            assert_eq!(
+                discovery["id_token_signing_alg_values_supported"],
+                json!(["EdDSA"])
+            );
+
+            // The realm's own tokens verify at the server (introspection of the
+            // bearer on a protected endpoint) and the logout token verifies
+            // against the OKP JWKS.
+            let userinfo = server
+                .get(&format!(
+                    "/realms/{EDDSA_REALM}/protocol/openid-connect/userinfo"
+                ))
+                .add_header("Authorization", auth_header(access))
+                .await;
+            assert_eq!(userinfo.status_code(), 200, "{}", userinfo.text());
+
+            let response = server
+                .post(&format!(
+                    "/realms/{EDDSA_REALM}/protocol/openid-connect/logout"
+                ))
+                .form(&[(
+                    "id_token_hint",
+                    tokens["id_token"].as_str().expect("id_token"),
+                )])
+                .await;
+            assert!(
+                response.status_code().is_success() || response.status_code().is_redirection(),
+                "{}",
+                response.text()
+            );
+
+            let received = rp.wait_for(1).await;
+            assert_eq!(received.len(), 1, "exactly one logout token");
+            assert_eq!(header(&received[0])["typ"], json!("logout+jwt"));
+            assert_eq!(header(&received[0])["alg"], json!("EdDSA"));
+            let claims = verified(&server, EDDSA_REALM, &received[0], &client.client_id).await;
+            assert_eq!(claims["sub"], json!(user.id));
+            assert_eq!(claims["events"], json!({ LOGOUT_EVENT: {} }));
+        });
+    }
+
     #[test]
     #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
     fn an_admin_revoking_a_session_notifies_its_clients() {
         rt().block_on(async {
             let server = make_server();
             let rp = fake_relying_party().await;
-            let client = create_client(&server, Some(&rp.endpoint)).await;
-            let user = create_user(&server).await;
-            let tokens = sign_in(&server, &client, &user).await;
+            let client = create_client(&server, REALM, Some(&rp.endpoint)).await;
+            let user = create_user(&server, REALM).await;
+            let tokens = sign_in(&server, REALM, &client, &user).await;
             let sid = payload(tokens["access_token"].as_str().expect("access_token"))["sid"]
                 .as_str()
                 .expect("sid")
@@ -482,10 +612,10 @@ mod tests {
         rt().block_on(async {
             let server = make_server();
             let rp = fake_relying_party().await;
-            let client = create_client(&server, Some(&rp.endpoint)).await;
-            let user = create_user(&server).await;
-            let first = sign_in(&server, &client, &user).await;
-            let second = sign_in(&server, &client, &user).await;
+            let client = create_client(&server, REALM, Some(&rp.endpoint)).await;
+            let user = create_user(&server, REALM).await;
+            let first = sign_in(&server, REALM, &client, &user).await;
+            let second = sign_in(&server, REALM, &client, &user).await;
 
             let master = master_token(&server).await;
             let response = server
@@ -523,14 +653,14 @@ mod tests {
             let server = make_server();
             let notified = fake_relying_party().await;
             let bystander = fake_relying_party().await;
-            let used = create_client(&server, Some(&notified.endpoint)).await;
+            let used = create_client(&server, REALM, Some(&notified.endpoint)).await;
             // Registered an endpoint but never took part in the session.
-            create_client(&server, Some(&bystander.endpoint)).await;
+            create_client(&server, REALM, Some(&bystander.endpoint)).await;
             // Took part in the session but registered no endpoint.
-            let silent = create_client(&server, None).await;
-            let user = create_user(&server).await;
-            let tokens = sign_in(&server, &used, &user).await;
-            sign_in(&server, &silent, &user).await;
+            let silent = create_client(&server, REALM, None).await;
+            let user = create_user(&server, REALM).await;
+            let tokens = sign_in(&server, REALM, &used, &user).await;
+            sign_in(&server, REALM, &silent, &user).await;
 
             server
                 .post(&format!("/realms/{REALM}/protocol/openid-connect/logout"))
@@ -553,10 +683,11 @@ mod tests {
     fn the_endpoint_is_validated_stored_and_cleared() {
         rt().block_on(async {
             let server = make_server();
-            let client = create_client(&server, None).await;
+            let client = create_client(&server, REALM, None).await;
 
             let refused = update_client(
                 &server,
+                REALM,
                 &client,
                 json!({ "backchannel_logout_uri": "not a url" }),
             )
@@ -565,6 +696,7 @@ mod tests {
 
             let stored = update_client(
                 &server,
+                REALM,
                 &client,
                 json!({
                     "backchannel_logout_uri": "https://app.example/backchannel-logout",
@@ -583,15 +715,21 @@ mod tests {
                 json!(false)
             );
 
-            let untouched = update_client(&server, &client, json!({ "name": "renamed" })).await;
+            let untouched =
+                update_client(&server, REALM, &client, json!({ "name": "renamed" })).await;
             assert_eq!(
                 untouched.json::<Value>()["data"]["backchannel_logout_uri"],
                 json!("https://app.example/backchannel-logout"),
                 "an absent field keeps the stored endpoint"
             );
 
-            let cleared =
-                update_client(&server, &client, json!({ "backchannel_logout_uri": null })).await;
+            let cleared = update_client(
+                &server,
+                REALM,
+                &client,
+                json!({ "backchannel_logout_uri": null }),
+            )
+            .await;
             assert_eq!(
                 cleared.json::<Value>()["data"]["backchannel_logout_uri"],
                 Value::Null
@@ -619,9 +757,9 @@ mod tests {
         rt().block_on(async {
             let server = make_server();
             let rp = fake_relying_party().await;
-            let client = create_client(&server, Some(&rp.endpoint)).await;
-            let user = create_user(&server).await;
-            let tokens = sign_in(&server, &client, &user).await;
+            let client = create_client(&server, REALM, Some(&rp.endpoint)).await;
+            let user = create_user(&server, REALM).await;
+            let tokens = sign_in(&server, REALM, &client, &user).await;
             let sid =
                 payload(tokens["access_token"].as_str().expect("access_token"))["sid"].clone();
 
@@ -647,11 +785,11 @@ mod tests {
         rt().block_on(async {
             let server = make_server();
             let rp = fake_relying_party().await;
-            let client = create_client(&server, Some(&rp.endpoint)).await;
-            let first = create_user(&server).await;
-            let second = create_user(&server).await;
-            sign_in(&server, &client, &first).await;
-            sign_in(&server, &client, &second).await;
+            let client = create_client(&server, REALM, Some(&rp.endpoint)).await;
+            let first = create_user(&server, REALM).await;
+            let second = create_user(&server, REALM).await;
+            sign_in(&server, REALM, &client, &first).await;
+            sign_in(&server, REALM, &client, &second).await;
 
             let master = master_token(&server).await;
             let response = server
