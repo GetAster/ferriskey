@@ -384,6 +384,7 @@ mod tests {
                     scope: scope.map(str::to_string),
                     actor_token: None,
                     actor_token_type: None,
+                    actor_assertion: None,
                     ip_address: None,
                     user_agent: None,
                 },
@@ -664,6 +665,7 @@ mod tests {
                 "resource",
                 "actor_token",
                 "actor_token_type",
+                "actor_assertion",
             ] {
                 assert!(
                     request.get(field).is_some(),
@@ -1121,6 +1123,152 @@ mod tests {
             let mut expected = link.clone();
             expected["act"] = link;
             assert_eq!(issued["act"], expected);
+        });
+    }
+
+    const ASSERTED: &str = "agent:planner@node-1";
+
+    async fn create_asserting_policy(
+        server: &TestServer,
+        client: &TestClient,
+        audience: &TestClient,
+        allow_delegation: bool,
+        allow_asserted_actor: bool,
+    ) -> Value {
+        let master = master_token(server).await;
+        let response = server
+            .post(&format!(
+                "/realms/{REALM}/clients/{}/token-exchange-policies",
+                client.uuid
+            ))
+            .add_header("Authorization", auth_header(&master))
+            .json(&json!({
+                "target_audience": audience.client_id,
+                "allowed_scopes": ["profile"],
+                "allow_impersonation": false,
+                "allow_delegation": allow_delegation,
+                "allow_asserted_actor": allow_asserted_actor,
+            }))
+            .await;
+        assert_eq!(response.status_code(), 201, "{}", response.text());
+        response.json::<Value>()
+    }
+
+    async fn asserting_exchange(
+        server: &TestServer,
+        client: &TestClient,
+        subject_token: &str,
+        audience: &TestClient,
+        assertion: &str,
+        actor_token: Option<&str>,
+    ) -> axum_test::TestResponse {
+        let mut form = vec![
+            ("grant_type", TOKEN_EXCHANGE_GRANT),
+            ("client_id", client.client_id.as_str()),
+            ("client_secret", client.secret.as_str()),
+            ("subject_token", subject_token),
+            ("subject_token_type", ACCESS_TOKEN_URN),
+            ("audience", audience.client_id.as_str()),
+            ("actor_assertion", assertion),
+        ];
+        if let Some(actor_token) = actor_token {
+            form.push(("actor_token", actor_token));
+            form.push(("actor_token_type", ACCESS_TOKEN_URN));
+        }
+        server.post(&token_path()).form(&form).await
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn an_asserted_actor_becomes_the_act_claim() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            let policy = create_asserting_policy(&server, &gateway, &orders, true, true).await;
+            assert_eq!(policy["allow_asserted_actor"], json!(true));
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            let response =
+                asserting_exchange(&server, &gateway, &subject_token, &orders, ASSERTED, None)
+                    .await;
+            assert_eq!(response.status_code(), 200, "{}", response.text());
+            let issued = claims(
+                response.json::<Value>()["access_token"]
+                    .as_str()
+                    .expect("token"),
+            );
+
+            assert_eq!(
+                issued["act"],
+                json!({ "sub": ASSERTED, "client_id": gateway.client_id, "asserted": true })
+            );
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn an_assertion_needs_both_policy_flags() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            let billing = create_client(&server, "billing", false).await;
+            // Delegation without asserting; asserting without delegation.
+            create_asserting_policy(&server, &gateway, &orders, true, false).await;
+            create_asserting_policy(&server, &gateway, &billing, false, true).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            for audience in [&orders, &billing] {
+                let response =
+                    asserting_exchange(&server, &gateway, &subject_token, audience, ASSERTED, None)
+                        .await;
+                assert_oauth_error(&response, 400, "unauthorized_client");
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn an_assertion_and_an_actor_token_together_are_refused() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client_with(&server, "gateway", true, true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_asserting_policy(&server, &gateway, &orders, true, true).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+            let actor_token = service_token(&server, &gateway).await;
+
+            let response = asserting_exchange(
+                &server,
+                &gateway,
+                &subject_token,
+                &orders,
+                ASSERTED,
+                Some(&actor_token),
+            )
+            .await;
+
+            assert_oauth_error(&response, 400, "invalid_request");
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_malformed_assertion_is_an_invalid_request() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_asserting_policy(&server, &gateway, &orders, true, true).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+            let too_long = "a".repeat(257);
+
+            for bad in ["", " padded ", "line\nbreak", too_long.as_str()] {
+                let response =
+                    asserting_exchange(&server, &gateway, &subject_token, &orders, bad, None).await;
+                assert_oauth_error(&response, 400, "invalid_request");
+            }
         });
     }
 }

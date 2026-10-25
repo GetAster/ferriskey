@@ -138,6 +138,8 @@ pub struct CreateTokenExchangePolicyValidator {
     pub allow_impersonation: bool,
     #[serde(default)]
     pub allow_delegation: bool,
+    #[serde(default)]
+    pub allow_asserted_actor: bool,
 }
 
 fn assertions_are_signed_by_default() -> bool {

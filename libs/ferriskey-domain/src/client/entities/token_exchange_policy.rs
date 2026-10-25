@@ -16,6 +16,10 @@ pub struct TokenExchangePolicy {
     pub allowed_scopes: Option<Vec<String>>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    /// Together with `allow_delegation`: the client may name an actor it
+    /// vouches for (`actor_assertion`) instead of presenting an actor token.
+    #[serde(default)]
+    pub allow_asserted_actor: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -26,6 +30,7 @@ pub struct TokenExchangePolicyDefinition {
     pub allowed_scopes: Option<Vec<String>>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    pub allow_asserted_actor: bool,
 }
 
 impl TokenExchangePolicy {
@@ -44,6 +49,7 @@ impl TokenExchangePolicy {
             allowed_scopes: definition.allowed_scopes,
             allow_impersonation: definition.allow_impersonation,
             allow_delegation: definition.allow_delegation,
+            allow_asserted_actor: definition.allow_asserted_actor,
             created_at: now,
             updated_at: now,
         }
