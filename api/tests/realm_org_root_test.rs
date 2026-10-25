@@ -139,12 +139,10 @@ mod tests {
 
         let state = AppState::new(Arc::new(Args::default()), service);
         let app = router(state).expect("build router");
-        let ctx = SharedContext {
+        SharedContext {
             app: std::sync::Mutex::new(app),
             pool,
-        };
-
-        ctx
+        }
     }
 
     fn make_server() -> TestServer {
