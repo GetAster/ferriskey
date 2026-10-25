@@ -43,14 +43,12 @@ export interface CredentialOverview {
   updated_at: Date
 }
 
-export interface JwkKey {
+export type JwkKey = {
   kid: string
   kty: string
-  use_: string
+  use: string
   alg: string
-  n: string
-  e: string
-}
+} & ({ n: string; e: string } | { crv: string; x: string })
 
 export interface JwtToken {
   access_token: string

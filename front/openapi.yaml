@@ -5867,15 +5867,16 @@ components:
           - 'null'
     JwkKey:
       type: object
+      description: A public signing key; RSA keys carry n and e, Ed25519 keys (RFC 8037) carry crv and x.
       required:
       - kid
       - kty
       - use
       - alg
-      - n
-      - e
       properties:
         alg:
+          type: string
+        crv:
           type: string
         e:
           type: string
@@ -5886,6 +5887,8 @@ components:
         n:
           type: string
         use:
+          type: string
+        x:
           type: string
     JwtToken:
       type: object
