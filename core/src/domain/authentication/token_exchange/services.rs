@@ -65,6 +65,9 @@ struct ExchangeTrace {
     client: Uuid,
     subject: Option<Uuid>,
     actor: Option<Uuid>,
+    /// The actor the client vouched for, once validated. Distinct from
+    /// `actor`, which is the user behind a verified actor token.
+    asserted_actor: Option<String>,
     policy: Option<Uuid>,
 }
 
@@ -320,6 +323,16 @@ where
         {
             return Err(TokenExchangeError::InvalidRequest);
         }
+        // One way to name the actor: a verified token, or a vouched name.
+        if input.actor_assertion.is_some() && actor_token.is_some() {
+            return Err(TokenExchangeError::InvalidRequest);
+        }
+        let asserted_actor = match input.actor_assertion.as_deref() {
+            Some(assertion) if is_valid_actor_assertion(assertion) => Some(assertion.to_string()),
+            Some(_) => return Err(TokenExchangeError::InvalidRequest),
+            None => None,
+        };
+        trace.asserted_actor = asserted_actor.clone();
 
         let (subject, user) = self
             .verify_subject(&params.realm, client, input.subject_token)
@@ -332,19 +345,25 @@ where
         };
         trace.actor = actor.as_ref().map(|actor| actor.sub);
 
+        let delegated = actor.is_some() || asserted_actor.is_some();
         let audience = input
             .audience
             .filter(|audience| !audience.trim().is_empty());
         let (policy, target) = match audience.as_deref() {
             Some(audience) => {
                 let (policy, target) = self
-                    .policy_for(&params.realm, client, audience, actor.is_some())
+                    .policy_for(&params.realm, client, audience, delegated)
                     .await?;
+                // Vouching for an actor is a further grant on top of
+                // delegation: the client, not a token, is the evidence.
+                if asserted_actor.is_some() && !policy.allow_asserted_actor {
+                    return Err(TokenExchangeError::UnauthorizedClient);
+                }
                 (Some(policy), Some(target))
             }
             // Delegation is only ever granted by a policy, and without an
             // audience there is none to grant it.
-            None if actor.is_some() => return Err(TokenExchangeError::UnauthorizedClient),
+            None if delegated => return Err(TokenExchangeError::UnauthorizedClient),
             None => (None, None),
         };
         trace.policy = policy.as_ref().map(|policy| policy.id);
@@ -384,7 +403,10 @@ where
                 audience,
                 scope: scope.clone(),
                 mapped,
-                act: act_claim(&subject, actor.as_ref()),
+                act: act_claim(
+                    &subject,
+                    actor_link(actor.as_ref(), asserted_actor.as_deref(), client).as_ref(),
+                ),
                 cnf,
             },
             now,
@@ -441,6 +463,7 @@ where
             // Only a well-formed thumbprint is recorded; anything else is
             // caller-controlled text that does not belong in the audit trail.
             "cnf_jkt": params.input.cnf_jkt.as_deref().filter(|jkt| is_jwk_thumbprint(jkt)),
+            "asserted_actor": trace.asserted_actor,
         });
         if let Err(err) = result {
             details["error_code"] = json!(err.to_string());
@@ -488,6 +511,7 @@ where
             client: client.id,
             subject: None,
             actor: None,
+            asserted_actor: None,
             policy: None,
         };
         let result = self.exchange_as(&client, params.clone(), &mut trace).await;
@@ -618,15 +642,18 @@ fn confirmation_claim(
 /// from the current actor down to the first one. Without a new actor the
 /// existing chain is carried over untouched: an exchange never erases who
 /// acted before.
-fn act_claim(subject: &JwtClaim, actor: Option<&JwtClaim>) -> Option<serde_json::Value> {
+fn act_claim(subject: &JwtClaim, actor: Option<&ActorLink>) -> Option<serde_json::Value> {
     let previous = subject.additional_claims.get("act").cloned();
     match actor {
         Some(actor) => {
-            let mut act = json!({ "sub": actor.sub, "client_id": actor.azp });
+            let mut act = json!({ "sub": actor.sub, "client_id": actor.client_id });
+            if actor.asserted {
+                act["asserted"] = json!(true);
+            }
             let prior_client = Some(subject.azp.as_str())
                 .filter(|azp| !azp.is_empty())
                 .or(subject.client_id.as_deref())
-                .filter(|client| *client != actor.azp);
+                .filter(|client| *client != actor.client_id);
             let nested = match prior_client {
                 Some(client) => {
                     let mut prior = json!({ "client_id": client });
@@ -644,6 +671,59 @@ fn act_claim(subject: &JwtClaim, actor: Option<&JwtClaim>) -> Option<serde_json:
         }
         None => previous,
     }
+}
+
+/// Who acts for the subject in the issued token, and on whose word.
+struct ActorLink {
+    /// A user id for a verified actor token, the vouched name otherwise.
+    sub: serde_json::Value,
+    /// The client the actor acts through: the actor token's `azp`, or the
+    /// requesting client that vouched for an asserted actor.
+    client_id: String,
+    /// True when the requesting client only vouches for the actor.
+    asserted: bool,
+}
+
+fn actor_link(
+    actor: Option<&JwtClaim>,
+    asserted: Option<&str>,
+    requester: &Client,
+) -> Option<ActorLink> {
+    match (actor, asserted) {
+        (Some(actor), _) => Some(ActorLink {
+            sub: json!(actor.sub),
+            client_id: actor.azp.clone(),
+            asserted: false,
+        }),
+        (None, Some(name)) => Some(ActorLink {
+            sub: json!(name),
+            client_id: requester.client_id.clone(),
+            asserted: true,
+        }),
+        (None, None) => None,
+    }
+}
+
+/// Whether `value` can name an asserted actor: 1 to 256 bytes of text with no
+/// control characters, no invisible or direction-changing format characters,
+/// and no leading or trailing whitespace. It ends up in a token claim and in
+/// the audit trail, so it must read the same to a human as to a machine. The
+/// format of the name itself is the requesting client's business.
+fn is_valid_actor_assertion(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.trim() == value
+        && !value.chars().any(|c| {
+            c.is_control()
+                || matches!(
+                    c,
+                    '\u{200B}'..='\u{200F}'
+                        | '\u{202A}'..='\u{202E}'
+                        | '\u{2060}'..='\u{2064}'
+                        | '\u{2066}'..='\u{206F}'
+                        | '\u{FEFF}'
+                )
+        })
 }
 
 /// The claims of the issued token. `iss`, `sub` and `sid` come from the
@@ -773,6 +853,7 @@ mod tests {
                 allow_impersonation: true,
                 allow_delegation: false,
                 allow_requested_cnf: false,
+                allow_asserted_actor: false,
             },
         )
     }
@@ -788,6 +869,7 @@ mod tests {
             actor_token: None,
             actor_token_type: None,
             cnf_jkt: None,
+            actor_assertion: None,
             ip_address: None,
             user_agent: None,
         }
@@ -2234,5 +2316,272 @@ mod tests {
 
         let details = harness.events()[0].details.clone().expect("details");
         assert!(details["cnf_jkt"].is_null());
+    }
+
+    const ASSERTED: &str = "agent:planner@node-1";
+
+    fn asserting_policy(realm: &Realm, client: &Client) -> TokenExchangePolicy {
+        let mut policy = delegating_policy(realm, client);
+        policy.allow_asserted_actor = true;
+        policy
+    }
+
+    fn asserting(assertion: &str) -> TokenExchangeInput {
+        let mut request = input(None, Some(AUDIENCE));
+        request.actor_assertion = Some(assertion.to_string());
+        request
+    }
+
+    fn asserting_harness(realm: &Realm, requester: &Client, subject: JwtClaim) -> Harness {
+        Harness::new(realm, requester.clone(), subject)
+            .with_client(client(realm, AUDIENCE))
+            .with_policy(asserting_policy(realm, requester))
+    }
+
+    #[test]
+    fn an_assertion_is_short_visible_text() {
+        assert!(is_valid_actor_assertion(ASSERTED));
+        assert!(is_valid_actor_assertion("a"));
+        assert!(is_valid_actor_assertion("agent with spaces inside"));
+        assert!(is_valid_actor_assertion("agent-é-日本"));
+        assert!(is_valid_actor_assertion(&"a".repeat(256)));
+
+        for rejected in [
+            "",
+            " ",
+            " leading",
+            "trailing ",
+            "new\nline",
+            "tab\there",
+            "nul\0byte",
+            "esc\u{1b}[0m",
+            "del\u{7f}",
+            "bidi\u{202e}override",
+            "zero\u{200b}width",
+            "bom\u{feff}",
+        ] {
+            assert!(!is_valid_actor_assertion(rejected), "{rejected:?}");
+        }
+        assert!(!is_valid_actor_assertion(&"a".repeat(257)));
+        // The limit is in bytes: 129 two-byte characters are 258 bytes.
+        assert!(!is_valid_actor_assertion(&"é".repeat(129)));
+    }
+
+    #[tokio::test]
+    async fn an_asserted_actor_is_recorded_with_the_client_that_vouched() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = asserting_harness(&realm, &requester, subject);
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect("an allowed assertion is granted");
+
+        assert_eq!(
+            harness.issued().additional_claims["act"],
+            json!({ "sub": ASSERTED, "client_id": REQUESTER, "asserted": true })
+        );
+    }
+
+    #[tokio::test]
+    async fn an_asserted_actor_wraps_the_recorded_delegation() {
+        let (realm, requester, user) = standard();
+        let mut subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let first_actor = json!({ "sub": Uuid::new_v4(), "client_id": "frontend" });
+        subject
+            .additional_claims
+            .insert("act".to_string(), first_actor.clone());
+        let harness = asserting_harness(&realm, &requester, subject);
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect("exchange should succeed");
+
+        assert_eq!(
+            harness.issued().additional_claims["act"],
+            json!({
+                "sub": ASSERTED,
+                "client_id": REQUESTER,
+                "asserted": true,
+                "act": first_actor,
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_subject_token_of_another_client_stays_in_the_chain_of_an_asserted_actor() {
+        let (realm, requester, user) = standard();
+        let first_actor = json!({ "sub": Uuid::new_v4(), "client_id": "frontend" });
+        let mut subject = subject_claims(&user, "frontend", "openid", 3600);
+        subject.aud.push(REQUESTER.to_string());
+        subject
+            .additional_claims
+            .insert("act".to_string(), first_actor.clone());
+        let harness = asserting_harness(&realm, &requester, subject);
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect("exchange should succeed");
+
+        assert_eq!(
+            harness.issued().additional_claims["act"],
+            json!({
+                "sub": ASSERTED,
+                "client_id": REQUESTER,
+                "asserted": true,
+                "act": { "client_id": "frontend", "act": first_actor },
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn an_assertion_is_refused_unless_the_policy_allows_asserted_actors() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(delegating_policy(&realm, &requester));
+
+        let err = harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect_err("delegation alone does not allow asserting");
+
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+        assert!(harness.nothing_issued());
+    }
+
+    #[tokio::test]
+    async fn an_assertion_is_refused_unless_the_policy_allows_delegation() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let mut policy = policy(&realm, &requester, None);
+        policy.allow_asserted_actor = true;
+        assert!(!policy.allow_delegation);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy);
+
+        let err = harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect_err("asserting is a kind of delegation");
+
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+    }
+
+    #[tokio::test]
+    async fn an_assertion_needs_an_audience_and_so_a_policy() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject);
+
+        let mut request = input(None, None);
+        request.actor_assertion = Some(ASSERTED.to_string());
+        let err = harness
+            .build()
+            .exchange(params(&realm, request))
+            .await
+            .expect_err("no audience, no policy to grant it");
+
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+    }
+
+    #[tokio::test]
+    async fn an_asserted_actor_does_not_combine_with_an_actor_token() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = asserting_harness(&realm, &requester, subject)
+            .with_actor(actor_claims(&realm, REQUESTER));
+
+        let mut request = delegated(Some(AUDIENCE));
+        request.actor_assertion = Some(ASSERTED.to_string());
+        let err = harness
+            .build()
+            .exchange(params(&realm, request))
+            .await
+            .expect_err("only one way of naming the actor");
+
+        assert_eq!(err, TokenExchangeError::InvalidRequest);
+        assert!(harness.nothing_issued());
+    }
+
+    #[tokio::test]
+    async fn a_malformed_assertion_is_an_invalid_request_even_when_allowed() {
+        let (realm, requester, user) = standard();
+
+        for bad in ["", " ", "line\nbreak", "bidi\u{202e}x"] {
+            let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+            let harness = asserting_harness(&realm, &requester, subject);
+
+            let err = harness
+                .build()
+                .exchange(params(&realm, asserting(bad)))
+                .await
+                .expect_err("a malformed assertion must be refused");
+
+            assert_eq!(err, TokenExchangeError::InvalidRequest, "{bad:?}");
+            assert!(harness.nothing_issued());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_mapper_cannot_mark_an_actor_as_verified_or_asserted() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = asserting_harness(&realm, &requester, subject)
+            .with_mapper_output("act", json!({ "sub": "forged" }));
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect("exchange should succeed");
+
+        assert_eq!(
+            harness.issued().additional_claims["act"],
+            json!({ "sub": ASSERTED, "client_id": REQUESTER, "asserted": true })
+        );
+    }
+
+    #[tokio::test]
+    async fn the_audit_trail_records_the_asserted_actor_apart_from_a_user_actor() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = asserting_harness(&realm, &requester, subject);
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting(ASSERTED)))
+            .await
+            .expect("exchange should succeed");
+
+        let details = harness.events()[0].details.clone().expect("details");
+        assert_eq!(details["asserted_actor"], json!(ASSERTED));
+        assert!(details["actor"].is_null());
+    }
+
+    #[tokio::test]
+    async fn the_audit_trail_never_records_a_malformed_assertion() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = asserting_harness(&realm, &requester, subject);
+
+        harness
+            .build()
+            .exchange(params(&realm, asserting("bad\nvalue")))
+            .await
+            .expect_err("a malformed assertion is refused");
+
+        let details = harness.events()[0].details.clone().expect("details");
+        assert!(details["asserted_actor"].is_null());
     }
 }

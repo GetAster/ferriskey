@@ -35,6 +35,7 @@ impl From<PolicyModel> for TokenExchangePolicy {
             allow_impersonation: model.allow_impersonation,
             allow_delegation: model.allow_delegation,
             allow_requested_cnf: model.allow_requested_cnf,
+            allow_asserted_actor: model.allow_asserted_actor,
             created_at: DateTime::<Utc>::from_naive_utc_and_offset(model.created_at, Utc),
             updated_at: DateTime::<Utc>::from_naive_utc_and_offset(model.updated_at, Utc),
         }
@@ -70,6 +71,7 @@ impl TokenExchangePolicyRepository for PostgresTokenExchangePolicyRepository {
             allow_impersonation: Set(policy.allow_impersonation),
             allow_delegation: Set(policy.allow_delegation),
             allow_requested_cnf: Set(policy.allow_requested_cnf),
+            allow_asserted_actor: Set(policy.allow_asserted_actor),
             created_at: Set(policy.created_at.naive_utc()),
             updated_at: Set(policy.updated_at.naive_utc()),
         };
@@ -242,6 +244,7 @@ mod tests {
             allow_impersonation: true,
             allow_delegation: false,
             allow_requested_cnf: false,
+            allow_asserted_actor: false,
         }
     }
 

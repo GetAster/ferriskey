@@ -9,6 +9,7 @@ export const tokenExchangePolicySchema = z.object({
   allowImpersonation: z.boolean(),
   allowDelegation: z.boolean(),
   allowRequestedCnf: z.boolean(),
+  allowAssertedActor: z.boolean(),
 })
 
 export type TokenExchangePolicySchema = z.infer<typeof tokenExchangePolicySchema>

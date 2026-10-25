@@ -347,6 +347,7 @@ async fn exchange_subject_token(
         actor_token: payload.actor_token,
         actor_token_type: payload.actor_token_type,
         cnf_jkt: payload.cnf_jkt,
+        actor_assertion: payload.actor_assertion,
         ip_address,
         user_agent,
     };

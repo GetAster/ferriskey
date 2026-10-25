@@ -48,6 +48,11 @@ pub struct TokenExchangeInput {
     /// bound to; becomes `cnf.jkt`. Needs `allow_requested_cnf` on the policy.
     #[serde(default)]
     pub cnf_jkt: Option<String>,
+    /// An actor the requesting client vouches for, in place of an
+    /// `actor_token`; becomes `act.sub` with `asserted: true`. Needs
+    /// `allow_asserted_actor` and `allow_delegation` on the policy.
+    #[serde(default)]
+    pub actor_assertion: Option<String>,
     #[serde(skip)]
     pub ip_address: Option<String>,
     #[serde(skip)]

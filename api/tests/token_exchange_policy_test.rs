@@ -408,6 +408,11 @@ mod tests {
                 json!(false),
                 "requested cnf is opt-in"
             );
+            assert_eq!(
+                body["allow_asserted_actor"],
+                json!(false),
+                "asserted actors are opt-in"
+            );
 
             let listed = list_policies(&server, &master, TENANT_A, &client).await;
             assert_eq!(listed.len(), 1);
