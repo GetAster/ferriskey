@@ -186,7 +186,7 @@ where
         match self.realm_repository.get_realm_settings(realm.id).await? {
             None => {
                 self.realm_repository
-                    .create_realm_settings(realm.id, "RSA256".to_string())
+                    .create_realm_settings(realm.id, "RS256".to_string())
                     .await?;
             }
             _ => {

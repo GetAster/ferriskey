@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use ferriskey_security::jwt::ports::KeyStoreRepository;
-use jsonwebtoken::{Algorithm, Header};
+use jsonwebtoken::Header;
 
 use crate::domain::authentication::backchannel_logout::{
     LOGOUT_TOKEN_TYP, LogoutTokenClaims, LogoutTokenSigner,
@@ -34,7 +34,7 @@ impl<K: KeyStoreRepository> LogoutTokenSigner for KeystoreLogoutTokenSigner<K> {
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
-        let mut header = Header::new(Algorithm::RS256);
+        let mut header = Header::new(key_pair.alg.jwt_algorithm());
         header.kid = Some(key_pair.id.to_string());
         header.typ = Some(LOGOUT_TOKEN_TYP.to_string());
 

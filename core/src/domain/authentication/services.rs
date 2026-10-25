@@ -2433,14 +2433,13 @@ where
 
     #[instrument(skip(self, token))]
     async fn verify_token(&self, token: String, realm_id: RealmId) -> Result<JwtClaim, CoreError> {
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-
         let jwt_key_pair = self
             .keystore_repository
             .get_or_generate_key(realm_id)
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
+        let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
         validation.validate_aud = false;
         let token_data =
             jsonwebtoken::decode::<JwtClaim>(&token, &jwt_key_pair.decoding_key, &validation)
@@ -4613,15 +4612,15 @@ where
         realm_id: RealmId,
         expected_issuer: &str,
     ) -> Result<IdTokenClaims, CoreError> {
-        let mut validation = Validation::new(jsonwebtoken::Algorithm::RS256);
-        validation.validate_aud = false;
-        validation.validate_exp = false;
-
         let jwt_key_pair = self
             .keystore_repository
             .get_or_generate_key(realm_id)
             .await
             .map_err(|_| CoreError::InternalServerError)?;
+
+        let mut validation = Validation::new(jwt_key_pair.alg.jwt_algorithm());
+        validation.validate_aud = false;
+        validation.validate_exp = false;
 
         let token_data = jsonwebtoken::decode::<IdTokenClaims>(
             id_token_hint,
@@ -6278,7 +6277,7 @@ async fn encode_token_with_key<T: Serialize>(
     expires_at: i64,
     key_pair: &JwtKeyPair,
 ) -> Result<Jwt, CoreError> {
-    let mut header = Header::new(jsonwebtoken::Algorithm::RS256);
+    let mut header = Header::new(key_pair.alg.jwt_algorithm());
     header.kid = Some(key_pair.id.to_string());
     let signing_input = signing_input(&header, claims).map_err(token_generation_error)?;
 
@@ -6290,7 +6289,7 @@ async fn encode_token_with_key<T: Serialize>(
     let (signing_input, signature) = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         signer
-            .sign_rs256(signing_input.as_bytes())
+            .sign(signing_input.as_bytes())
             .map(|signature| (signing_input, signature))
     })
     .await
@@ -6336,10 +6335,13 @@ mod tests {
         use ferriskey_security::jwt::entities::JwtKeyPair;
         use jsonwebtoken::{Algorithm, DecodingKey, Header, Validation};
 
-        let (private, public) = JwtKeyPair::generate().expect("generate a key");
+        let (private, public) =
+            JwtKeyPair::generate(ferriskey_security::jwt::entities::SigningAlgorithm::Rs256)
+                .expect("generate a key");
         let certificate =
             JwtKeyPair::self_signed_certificate(&private, "test").expect("certificate");
         let key = JwtKeyPair::from_pem(
+            ferriskey_security::jwt::entities::SigningAlgorithm::Rs256,
             &private,
             &public,
             &certificate,
@@ -6366,15 +6368,52 @@ mod tests {
             .expect("the signature verifies");
     }
 
+    #[tokio::test]
+    async fn an_offloaded_eddsa_signature_equals_the_library_encoding_and_verifies() {
+        use ferriskey_security::jwt::entities::{JwtKeyPair, SigningAlgorithm};
+        use jsonwebtoken::{Algorithm, DecodingKey, Header, Validation};
+
+        let (private, public) = JwtKeyPair::generate(SigningAlgorithm::EdDsa).expect("generate");
+        let key = JwtKeyPair::from_pem(
+            SigningAlgorithm::EdDsa,
+            &private,
+            &public,
+            "",
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        )
+        .expect("key pair");
+        let claims = serde_json::json!({ "sub": "service-account", "exp": 4_102_444_800_i64 });
+
+        let jwt = super::encode_token_with_key(&claims, 4_102_444_800, &key)
+            .await
+            .expect("sign");
+
+        // Ed25519 signatures are deterministic, so the token matches byte for byte.
+        let mut header = Header::new(Algorithm::EdDSA);
+        header.kid = Some(key.id.to_string());
+        let reference = jsonwebtoken::encode(&header, &claims, &key.encoding_key).expect("encode");
+        assert_eq!(jwt.token, reference);
+
+        let decoding = DecodingKey::from_ed_pem(public.as_bytes()).expect("public key");
+        let mut validation = Validation::new(Algorithm::EdDSA);
+        validation.validate_aud = false;
+        jsonwebtoken::decode::<serde_json::Value>(&jwt.token, &decoding, &validation)
+            .expect("the signature verifies");
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn concurrent_signatures_all_verify_and_return_every_permit() {
         use ferriskey_security::jwt::entities::JwtKeyPair;
         use jsonwebtoken::{Algorithm, DecodingKey, Validation};
 
-        let (private, public) = JwtKeyPair::generate().expect("generate a key");
+        let (private, public) =
+            JwtKeyPair::generate(ferriskey_security::jwt::entities::SigningAlgorithm::Rs256)
+                .expect("generate a key");
         let certificate =
             JwtKeyPair::self_signed_certificate(&private, "test").expect("certificate");
         let key = JwtKeyPair::from_pem(
+            ferriskey_security::jwt::entities::SigningAlgorithm::Rs256,
             &private,
             &public,
             &certificate,

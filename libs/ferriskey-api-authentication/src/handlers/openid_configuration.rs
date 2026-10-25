@@ -7,6 +7,7 @@ use ferriskey_api_core::{
     app_state::AppState,
     url::FullUrl,
 };
+use ferriskey_core::domain::authentication::ports::AuthService;
 use ferriskey_core::domain::realm::ports::RealmService;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -66,6 +67,15 @@ pub async fn get_openid_configuration(
 
     let issuer = realm_issuer(&base_url, &state.args.server.root_path, &realm_name);
 
+    let signing_algs = signing_algs_of(
+        state
+            .service
+            .get_certs(realm_name.clone())
+            .await
+            .map(|keys| keys.into_iter().map(|key| key.alg).collect())
+            .unwrap_or_default(),
+    );
+
     Ok(Response::OK(GetOpenIdConfigurationResponse {
         authorization_endpoint: format!("{issuer}/protocol/openid-connect/auth"),
         token_endpoint: format!("{issuer}/protocol/openid-connect/token"),
@@ -87,7 +97,7 @@ pub async fn get_openid_configuration(
             "code id_token token".to_string(),
         ],
         subject_types_supported: vec!["public".to_string()],
-        id_token_signing_alg_values_supported: vec!["RS256".to_string()],
+        id_token_signing_alg_values_supported: signing_algs,
         token_endpoint_auth_methods_supported: supported_token_endpoint_auth_methods(),
         code_challenge_methods_supported: vec!["S256".to_string()],
         backchannel_logout_supported: true,
@@ -100,4 +110,40 @@ pub async fn get_openid_configuration(
         client_id_metadata_document_supported: settings.cimd_enabled.then_some(true),
         issuer,
     }))
+}
+
+/// The algorithms to advertise: those the realm's keys sign with, without
+/// duplicates, or RS256 (the long-standing default) when none can be read.
+fn signing_algs_of(mut algs: Vec<String>) -> Vec<String> {
+    algs.sort();
+    algs.dedup();
+
+    if algs.is_empty() {
+        algs.push("RS256".to_string());
+    }
+
+    algs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::signing_algs_of;
+
+    #[test]
+    fn advertises_the_algorithms_the_realm_keys_use() {
+        assert_eq!(signing_algs_of(vec!["EdDSA".to_string()]), ["EdDSA"]);
+        assert_eq!(
+            signing_algs_of(vec![
+                "RS256".to_string(),
+                "EdDSA".to_string(),
+                "RS256".to_string()
+            ]),
+            ["EdDSA", "RS256"]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_rs256_when_the_realm_has_no_readable_key() {
+        assert_eq!(signing_algs_of(Vec::new()), ["RS256"]);
+    }
 }

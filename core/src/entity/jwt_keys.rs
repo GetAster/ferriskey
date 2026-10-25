@@ -19,6 +19,8 @@ pub struct Model {
     pub public_key: String,
     pub created_at: DateTime,
     pub certificate: Option<String>,
+    pub kty: String,
+    pub alg: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -29,6 +31,8 @@ pub enum Column {
     PublicKey,
     CreatedAt,
     Certificate,
+    Kty,
+    Alg,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -58,6 +62,8 @@ impl ColumnTrait for Column {
             Self::PublicKey => ColumnType::Text.def(),
             Self::CreatedAt => ColumnType::DateTime.def(),
             Self::Certificate => ColumnType::Text.def().null(),
+            Self::Kty => ColumnType::Text.def(),
+            Self::Alg => ColumnType::Text.def(),
         }
     }
 }
