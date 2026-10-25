@@ -100,6 +100,9 @@ impl From<CoreError> for ApiError {
             CoreError::RealmAlreadyExists(name) => {
                 Self::Conflict(CoreError::RealmAlreadyExists(name).to_string().into())
             }
+            CoreError::InvalidOrgRootPubkey(detail) => Self::BadRequest(
+                CoreError::InvalidOrgRootPubkey(detail).to_string().into(),
+            ),
             CoreError::InvalidUser => Self::Unauthorized("Invalid user".into()),
             CoreError::InvalidPassword => Self::Unauthorized("Invalid password".into()),
             CoreError::InvalidState => Self::BadRequest("Invalid state".into()),

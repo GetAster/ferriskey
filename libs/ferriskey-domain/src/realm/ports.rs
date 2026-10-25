@@ -64,6 +64,13 @@ pub trait RealmRepository: Send + Sync {
         name: String,
         display_name: Option<String>,
     ) -> impl Future<Output = Result<Realm, CoreError>> + Send;
+    /// Sets the realm's organisation root public key (64 lowercase hex).
+    fn set_org_root_pubkey(
+        &self,
+        realm_id: RealmId,
+        pubkey: &str,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
     fn delete_by_name(&self, name: &str) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn create_realm_settings(

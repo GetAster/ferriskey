@@ -3,7 +3,7 @@ pub use ferriskey_domain::realm::scope::{
 };
 pub use ferriskey_domain::realm::{
     LoginAlias, LoginAliases, Realm, RealmFilter, RealmId, RealmSetting, RealmSortField,
-    ResourceOwner, SmtpConfig, SmtpEncryption,
+    ResourceOwner, SmtpConfig, SmtpEncryption, is_valid_org_root_pubkey,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

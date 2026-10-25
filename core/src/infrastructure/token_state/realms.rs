@@ -65,6 +65,12 @@ impl<R: RealmRepository> RealmRepository for InvalidatingRealmRepository<R> {
         updated
     }
 
+    async fn set_org_root_pubkey(&self, realm_id: RealmId, pubkey: &str) -> Result<(), CoreError> {
+        let stored = self.inner.set_org_root_pubkey(realm_id, pubkey).await;
+        self.state.changed();
+        stored
+    }
+
     async fn delete_by_name(&self, name: &str) -> Result<(), CoreError> {
         let deleted = self.inner.delete_by_name(name).await;
         self.state.changed();
