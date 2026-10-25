@@ -21,6 +21,9 @@ pub struct Model {
     pub certificate: Option<String>,
     pub kty: String,
     pub alg: String,
+    pub state: String,
+    pub retired_at: Option<DateTime>,
+    pub verify_until: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -33,6 +36,9 @@ pub enum Column {
     Certificate,
     Kty,
     Alg,
+    State,
+    RetiredAt,
+    VerifyUntil,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -57,13 +63,16 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Uuid.def(),
-            Self::RealmId => ColumnType::Uuid.def().unique(),
+            Self::RealmId => ColumnType::Uuid.def(),
             Self::PrivateKey => ColumnType::Text.def(),
             Self::PublicKey => ColumnType::Text.def(),
             Self::CreatedAt => ColumnType::DateTime.def(),
             Self::Certificate => ColumnType::Text.def().null(),
             Self::Kty => ColumnType::Text.def(),
             Self::Alg => ColumnType::Text.def(),
+            Self::State => ColumnType::Text.def(),
+            Self::RetiredAt => ColumnType::DateTime.def().null(),
+            Self::VerifyUntil => ColumnType::DateTime.def().null(),
         }
     }
 }
