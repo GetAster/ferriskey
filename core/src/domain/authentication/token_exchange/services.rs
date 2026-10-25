@@ -2584,4 +2584,80 @@ mod tests {
         let details = harness.events()[0].details.clone().expect("details");
         assert!(details["asserted_actor"].is_null());
     }
+
+    #[tokio::test]
+    async fn an_asserted_actor_and_a_bound_key_travel_in_one_token() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let mut policy = asserting_policy(&realm, &requester);
+        policy.allow_requested_cnf = true;
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy);
+
+        let mut request = asserting(ASSERTED);
+        request.cnf_jkt = Some(JKT.to_string());
+        harness
+            .build()
+            .exchange(params(&realm, request))
+            .await
+            .expect("both grants are allowed");
+
+        let issued = harness.issued();
+        assert_eq!(
+            issued.additional_claims["act"],
+            json!({ "sub": ASSERTED, "client_id": REQUESTER, "asserted": true })
+        );
+        assert_eq!(issued.additional_claims["cnf"], json!({ "jkt": JKT }));
+
+        let details = harness.events()[0].details.clone().expect("details");
+        assert_eq!(details["asserted_actor"], json!(ASSERTED));
+        assert_eq!(details["cnf_jkt"], json!(JKT));
+    }
+
+    #[tokio::test]
+    async fn re_delegating_a_bound_token_needs_a_new_key_and_keeps_the_chain() {
+        let (realm, requester, user) = standard();
+        let mut subject = bound_subject(&user);
+        let first = json!({ "sub": ASSERTED, "client_id": REQUESTER, "asserted": true });
+        subject
+            .additional_claims
+            .insert("act".to_string(), first.clone());
+        let mut policy = asserting_policy(&realm, &requester);
+        policy.allow_requested_cnf = true;
+        let harness = Harness::new(&realm, requester.clone(), subject.clone())
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy.clone());
+
+        // A bound token cannot be re-delegated without naming its new key.
+        let err = harness
+            .build()
+            .exchange(params(&realm, asserting("agent:second@node-2")))
+            .await
+            .expect_err("the bound subject needs a new cnf_jkt");
+        assert_eq!(err, TokenExchangeError::InvalidRequest);
+
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy);
+        let mut request = asserting("agent:second@node-2");
+        request.cnf_jkt = Some(JKT.to_string());
+        harness
+            .build()
+            .exchange(params(&realm, request))
+            .await
+            .expect("a new key rebinds the token");
+
+        let issued = harness.issued();
+        assert_eq!(
+            issued.additional_claims["act"],
+            json!({
+                "sub": "agent:second@node-2",
+                "client_id": REQUESTER,
+                "asserted": true,
+                "act": first,
+            })
+        );
+        assert_eq!(issued.additional_claims["cnf"], json!({ "jkt": JKT }));
+    }
 }
