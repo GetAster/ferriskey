@@ -142,12 +142,10 @@ mod tests {
 
         let state = AppState::new(Arc::new(Args::default()), service);
         let app = router(state).expect("build router");
-        let ctx = SharedContext {
+        SharedContext {
             app: std::sync::Mutex::new(app),
             pool,
-        };
-
-        ctx
+        }
     }
 
     fn make_server() -> TestServer {
@@ -211,15 +209,13 @@ mod tests {
             .await;
         assert_eq!(response.status_code(), 201, "{}", response.text());
         let body: Value = response.json();
-        let client = TestClient {
+        TestClient {
             client_id,
             secret: body["client_secret"]
                 .as_str()
                 .expect("creation hands back the plaintext secret")
                 .to_string(),
-        };
-
-        client
+        }
     }
 
     struct TestUser {
@@ -281,8 +277,6 @@ mod tests {
         let part = token.split('.').next().expect("a JWT has a header");
         serde_json::from_slice(&URL_SAFE_NO_PAD.decode(part).expect("base64url")).expect("JSON")
     }
-
-    /// Verifies `token` against the realm JWKS and returns its claims.
 
     async fn create_realm(server: &TestServer, name: &str, algorithm: &str) {
         let master = master_token(server).await;
