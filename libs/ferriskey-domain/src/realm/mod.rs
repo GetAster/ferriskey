@@ -100,9 +100,23 @@ pub struct Realm {
     /// contain whitespace and be changed freely without breaking realm URLs.
     /// Falls back to `name` when unset.
     pub display_name: Option<String>,
+    /// The organisation root's Ed25519 public key, as 64 lowercase hex
+    /// characters. Public material; `None` until set through the admin API.
+    pub org_root_pubkey: Option<String>,
     pub settings: Option<RealmSetting>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Length of an Ed25519 public key in hex characters.
+const ORG_ROOT_PUBKEY_HEX_LEN: usize = 64;
+
+/// Whether `value` is an Ed25519 public key as 64 lowercase hex characters.
+pub fn is_valid_org_root_pubkey(value: &str) -> bool {
+    value.len() == ORG_ROOT_PUBKEY_HEX_LEN
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -310,6 +324,7 @@ impl Realm {
             id: RealmId::default(),
             name,
             display_name: None,
+            org_root_pubkey: None,
             settings: None,
             created_at: now,
             updated_at: now,

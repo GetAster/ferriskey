@@ -127,6 +127,7 @@ mod tests {
             id,
             name: "master".to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: enabled.map(|compass_enabled| {
                 let mut settings = RealmSetting::new(id, Some("RS256".to_string()));
                 settings.compass_enabled = compass_enabled;

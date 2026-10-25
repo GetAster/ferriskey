@@ -286,6 +286,7 @@ mod tests {
             id: RealmId::new(Uuid::new_v4()),
             name: name.to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

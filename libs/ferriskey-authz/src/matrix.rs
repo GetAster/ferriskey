@@ -891,7 +891,7 @@ pub const AUTHZ_MATRIX: &[AuthzRow] = &[
         line: 829,
     },
     AuthzRow {
-        service_fn: "authorize_signing_key_change",
+        service_fn: "set_realm_org_root",
         policy_fn: "can_update_realm",
         action: actions::REALM_UPDATE,
         resource: EntityType::REALM,
@@ -899,6 +899,16 @@ pub const AUTHZ_MATRIX: &[AuthzRow] = &[
         self_bypass: false,
         file: "core/src/application/services.rs",
         line: 782,
+    },
+    AuthzRow {
+        service_fn: "authorize_signing_key_change",
+        policy_fn: "can_update_realm",
+        action: actions::REALM_UPDATE,
+        resource: EntityType::REALM,
+        permissions: &[Permissions::ManageRealm],
+        self_bypass: false,
+        file: "core/src/application/services.rs",
+        line: 809,
     },
     AuthzRow {
         service_fn: "authorized_scope",

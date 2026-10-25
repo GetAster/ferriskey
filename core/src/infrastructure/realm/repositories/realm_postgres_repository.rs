@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryTrait, Select, TransactionTrait,
+    QueryFilter, QueryTrait, Select, TransactionTrait, sea_query::Expr,
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::domain::realm::{
 };
 use crate::entity::realms;
 use crate::infrastructure::pagination::{SortColumn, contains, paginate};
-use ferriskey_domain::realm::LoginAliases;
+use ferriskey_domain::realm::{LoginAliases, is_valid_org_root_pubkey};
 use tracing::{error, info_span};
 
 impl SortColumn<realms::Entity> for RealmSortField {
@@ -161,6 +161,7 @@ impl RealmRepository for PostgresRealmRepository {
             id: Set(realm.id.into()),
             name: Set(realm.name),
             display_name: Set(realm.display_name),
+            org_root_pubkey: Set(None),
             created_at: Set(realm.created_at.naive_utc()),
             updated_at: Set(realm.updated_at.naive_utc()),
         };
@@ -209,6 +210,34 @@ impl RealmRepository for PostgresRealmRepository {
             .map(Realm::from);
         let updated_realm = updated_realm.ok_or(CoreError::InternalServerError)?;
         Ok(updated_realm)
+    }
+
+    async fn set_org_root_pubkey(&self, realm_id: RealmId, pubkey: &str) -> Result<(), CoreError> {
+        if !is_valid_org_root_pubkey(pubkey) {
+            return Err(CoreError::InvalidOrgRootPubkey(
+                "must be 64 lowercase hex characters".to_string(),
+            ));
+        }
+
+        let result = RealmEntity::update_many()
+            .col_expr(realms::Column::OrgRootPubkey, Expr::value(pubkey))
+            .col_expr(
+                realms::Column::UpdatedAt,
+                Expr::value(Utc::now().naive_utc()),
+            )
+            .filter(realms::Column::Id.eq::<Uuid>(realm_id.into()))
+            .exec(&self.db)
+            .await
+            .map_err(|e| {
+                error!("error setting the realm organisation root: {:?}", e);
+                CoreError::InternalServerError
+            })?;
+
+        if result.rows_affected == 0 {
+            return Err(CoreError::NotFound);
+        }
+
+        Ok(())
     }
 
     async fn delete_by_name(&self, name: &str) -> Result<(), CoreError> {
