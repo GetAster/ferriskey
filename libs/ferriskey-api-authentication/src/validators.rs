@@ -76,6 +76,12 @@ pub struct TokenRequestValidator {
     // `urn:ietf:params:oauth:token-type:access_token` is supported.
     #[serde(default)]
     pub actor_token_type: Option<String>,
+
+    // RFC 7638 SHA-256 thumbprint (base64url, 43 characters) of the key the
+    // exchanged token is bound to; emitted as `cnf.jkt`. The requesting
+    // client's policy must allow it (`allow_requested_cnf`).
+    #[serde(default)]
+    pub cnf_jkt: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]

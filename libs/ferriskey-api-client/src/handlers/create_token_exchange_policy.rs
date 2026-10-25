@@ -55,6 +55,7 @@ pub async fn create_token_exchange_policy(
                     allowed_scopes: payload.allowed_scopes,
                     allow_impersonation: payload.allow_impersonation,
                     allow_delegation: payload.allow_delegation,
+                    allow_requested_cnf: payload.allow_requested_cnf,
                 },
             },
         )

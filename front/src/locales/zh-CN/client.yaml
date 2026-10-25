@@ -523,6 +523,7 @@ token_exchange:
     no_scope_cap: 无作用域上限
     impersonation: 模拟
     delegation: 委托
+    requested_cnf: 密钥绑定
     delete: '删除 {{name}} 的策略'
   create:
     title: 新建令牌交换策略
@@ -544,6 +545,9 @@ token_exchange:
     delegation:
       label: 允许委托
       description: 客户端可以使用 actor_token 进行交换，令牌中将加入 act 声明。
+    requested_cnf:
+      label: 允许密钥绑定
+      description: 客户端可以发送 cnf_jkt（密钥指纹）将签发的令牌绑定到该密钥（cnf 声明），也可以交换已绑定的令牌。
     cancel: 取消
     submit: 创建策略
     submitting: 创建中…

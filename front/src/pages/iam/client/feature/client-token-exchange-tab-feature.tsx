@@ -48,6 +48,7 @@ export default function ClientTokenExchangeTabFeature({
         allowed_scopes: values.allowedScopes.length > 0 ? values.allowedScopes : null,
         allow_impersonation: values.allowImpersonation,
         allow_delegation: values.allowDelegation,
+        allow_requested_cnf: values.allowRequestedCnf,
       },
     })
       .then(() => true)
