@@ -9,8 +9,8 @@ use crate::domain::authentication::client_authentication::{ClientGrant, authenti
 use crate::domain::client::entities::Client;
 use crate::domain::common::policies::ensure_policy;
 use crate::domain::jwt::entities::{Jwt, JwtClaim};
-use crate::domain::realm::entities::{RealmId, RealmScope};
-use crate::domain::realm::ports::RealmPolicy;
+use crate::domain::realm::entities::{Realm, RealmId, RealmScope};
+use crate::domain::realm::ports::{RealmPolicy, RealmRepository};
 use crate::domain::user::entities::User;
 use ferriskey_security::jwt::ports::{KeyRotation, KeyStoreRepository};
 
@@ -767,6 +767,34 @@ impl ApplicationService {
         );
 
         Ok(outcome)
+    }
+
+    /// Sets the realm's organisation root public key. Needs the right to
+    /// update the realm.
+    pub async fn set_realm_org_root(
+        &self,
+        identity: Identity,
+        realm_name: String,
+        pubkey: String,
+    ) -> Result<Realm, CoreError> {
+        let scope =
+            RealmScope::resolve(self.realm_service.realm_repository.as_ref(), &realm_name).await?;
+        ensure_policy(
+            self.realm_service
+                .policy
+                .can_update_realm(&identity, scope.realm())
+                .await,
+            "insufficient permissions",
+        )?;
+
+        let repository = self.realm_service.realm_repository.as_ref();
+        repository.set_org_root_pubkey(scope.id(), &pubkey).await?;
+        tracing::info!(realm = %realm_name, "set the realm organisation root");
+
+        repository
+            .get_by_id(scope.id())
+            .await?
+            .ok_or(CoreError::NotFound)
     }
 
     async fn authorize_signing_key_change(

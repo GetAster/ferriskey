@@ -12,6 +12,7 @@ use super::handlers::get_realm::{__path_get_realm, get_realm};
 use super::handlers::get_smtp_config::{__path_get_smtp_config, get_smtp_config};
 use super::handlers::get_user_realm_settings::get_user_realm_settings;
 use super::handlers::get_user_realms::{__path_get_user_realms, get_user_realms};
+use super::handlers::org_root::{__path_set_org_root, set_org_root};
 use super::handlers::resource_owners::{
     __path_get_resource_owners, __path_replace_resource_owners, get_resource_owners,
     replace_resource_owners,
@@ -40,6 +41,7 @@ use utoipa::OpenApi;
     update_realm_setting,
     stage_signing_key,
     rotate_signing_key,
+    set_org_root,
     get_resource_owners,
     replace_resource_owners,
     get_user_realms,
@@ -105,6 +107,13 @@ pub fn realm_routes(state: AppState) -> Router<AppState> {
                 state.args.server.root_path
             ),
             post(rotate_signing_key),
+        )
+        .route(
+            &format!(
+                "{}/realms/{{realm_name}}/org-root",
+                state.args.server.root_path
+            ),
+            put(set_org_root),
         )
         .route(
             &format!(

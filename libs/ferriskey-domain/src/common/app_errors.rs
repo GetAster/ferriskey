@@ -76,6 +76,9 @@ pub enum CoreError {
     #[error("A realm named {0} already exists")]
     RealmAlreadyExists(String),
 
+    #[error("Invalid organisation root public key: {0}")]
+    InvalidOrgRootPubkey(String),
+
     #[error("Invalid user")]
     InvalidUser,
 
@@ -478,6 +481,7 @@ impl CoreError {
             CoreError::InvalidClient => "invalid_client",
             CoreError::InvalidRealm => "invalid_realm",
             CoreError::RealmAlreadyExists(_) => "realm_already_exists",
+            CoreError::InvalidOrgRootPubkey(_) => "invalid_org_root_pubkey",
             CoreError::InvalidUser => "invalid_user",
             CoreError::InvalidPassword => "invalid_password",
             CoreError::InvalidState => "invalid_state",
@@ -680,6 +684,10 @@ mod tests {
             (
                 CoreError::RealmAlreadyExists(payload.clone()),
                 "realm_already_exists",
+            ),
+            (
+                CoreError::InvalidOrgRootPubkey(payload.clone()),
+                "invalid_org_root_pubkey",
             ),
             (CoreError::InvalidUser, "invalid_user"),
             (CoreError::InvalidPassword, "invalid_password"),
@@ -981,7 +989,7 @@ mod tests {
 
     #[test]
     fn reason_codes_cover_every_variant() {
-        assert_eq!(every_variant_with_expected_reason().len(), 133);
+        assert_eq!(every_variant_with_expected_reason().len(), 134);
     }
 
     #[test]

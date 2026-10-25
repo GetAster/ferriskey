@@ -661,6 +661,7 @@ mod db_tests {
                 id: RealmId::from(realm_id),
                 name: format!("realm-{}", realm_id.simple()),
                 display_name: None,
+                org_root_pubkey: None,
                 settings: None,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),

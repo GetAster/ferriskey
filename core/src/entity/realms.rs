@@ -16,6 +16,7 @@ pub struct Model {
     pub id: Uuid,
     pub name: String,
     pub display_name: Option<String>,
+    pub org_root_pubkey: Option<String>,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }
@@ -25,6 +26,7 @@ pub enum Column {
     Id,
     Name,
     DisplayName,
+    OrgRootPubkey,
     CreatedAt,
     UpdatedAt,
 }
@@ -81,6 +83,7 @@ impl ColumnTrait for Column {
             Self::Id => ColumnType::Uuid.def(),
             Self::Name => ColumnType::String(StringLen::N(255u32)).def().unique(),
             Self::DisplayName => ColumnType::String(StringLen::N(255u32)).def().null(),
+            Self::OrgRootPubkey => ColumnType::String(StringLen::N(64u32)).def().null(),
             Self::CreatedAt => ColumnType::DateTime.def(),
             Self::UpdatedAt => ColumnType::DateTime.def(),
         }

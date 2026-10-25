@@ -613,6 +613,7 @@ mod tests {
             id,
             name: name.to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

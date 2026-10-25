@@ -1031,6 +1031,7 @@ mod tests {
                 id: realm.id,
                 name: realm.name.clone(),
                 display_name: realm.display_name.clone(),
+                org_root_pubkey: None,
                 settings: None,
                 created_at: realm.created_at,
                 updated_at: realm.updated_at,

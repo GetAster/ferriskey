@@ -500,6 +500,7 @@ mod tests {
             id: RealmId::new(Uuid::new_v4()),
             name: "test-realm".to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: Some(RealmSetting::new(
                 RealmId::new(Uuid::new_v4()),
                 Some("RS256".to_string()),
