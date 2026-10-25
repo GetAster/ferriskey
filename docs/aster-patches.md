@@ -26,5 +26,6 @@ None yet. The current line is `upgrade/ferriskey-main-9a7d5d8c`, cut from upstre
 | # | Topic branch | Summary | Upstream status |
 | --- | --- | --- | --- |
 | 1 | `feat/eddsa-signing-main` | Per-key signing algorithm on the `jwt_keys` row (`kty`, `alg`); EdDSA (Ed25519) realm keys, OKP JWKS (RFC 8037), discovery lists the realm's algorithms; `default_signing_algorithm` accepts `RS256`/`EdDSA` and chooses the type of newly generated keys; SAML refused in EdDSA realms. | Not submitted; `fa9901dc` (aws-lc-rs signing) is already in the base. |
+| 2 | `feat/confirmation-claim` | Token-exchange request parameter `cnf_jkt` (RFC 7638 thumbprint) emits `cnf: {"jkt": …}`, gated by the new policy flag `allow_requested_cnf`; a `cnf`-bound subject token is exchanged only with the flag and a new `cnf_jkt`; mapper-produced `cnf`/`act` are dropped; thumbprint recorded in the security event. | Not submitted. |
 
 Planned patches are described in Aster's `aster-idp` design (`_internal/docs/agentIdentity/`), not here, until they land.
