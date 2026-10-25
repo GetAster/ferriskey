@@ -403,6 +403,11 @@ mod tests {
             assert_eq!(body["client_id"], json!(client.uuid));
             assert_eq!(body["allowed_scopes"], json!(["orders:read"]));
             assert_eq!(body["allow_impersonation"], json!(true));
+            assert_eq!(
+                body["allow_requested_cnf"],
+                json!(false),
+                "requested cnf is opt-in"
+            );
 
             let listed = list_policies(&server, &master, TENANT_A, &client).await;
             assert_eq!(listed.len(), 1);

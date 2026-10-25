@@ -315,6 +315,12 @@ where
             return Err(TokenExchangeError::InvalidTarget);
         }
 
+        if let Some(jkt) = input.cnf_jkt.as_deref()
+            && !is_jwk_thumbprint(jkt)
+        {
+            return Err(TokenExchangeError::InvalidRequest);
+        }
+
         let (subject, user) = self
             .verify_subject(&params.realm, client, input.subject_token)
             .await?;
@@ -342,6 +348,8 @@ where
             None => (None, None),
         };
         trace.policy = policy.as_ref().map(|policy| policy.id);
+
+        let cnf = confirmation_claim(&subject, input.cnf_jkt.as_deref(), policy.as_ref())?;
 
         let scope = resolve_scope(
             input.scope.as_deref(),
@@ -377,6 +385,7 @@ where
                 scope: scope.clone(),
                 mapped,
                 act: act_claim(&subject, actor.as_ref()),
+                cnf,
             },
             now,
             lifetime,
@@ -429,6 +438,9 @@ where
             "audience": params.input.audience,
             "policy_id": trace.policy,
             "actor": trace.actor,
+            // Only a well-formed thumbprint is recorded; anything else is
+            // caller-controlled text that does not belong in the audit trail.
+            "cnf_jkt": params.input.cnf_jkt.as_deref().filter(|jkt| is_jwk_thumbprint(jkt)),
         });
         if let Err(err) = result {
             details["error_code"] = json!(err.to_string());
@@ -561,6 +573,44 @@ struct ExchangedToken {
     mapped: HashMap<String, serde_json::Value>,
     /// The RFC 8693 §4.1 `act` claim, when anyone acts for the subject.
     act: Option<serde_json::Value>,
+    /// The RFC 7800 `cnf` claim binding the token to a key, when requested.
+    cnf: Option<serde_json::Value>,
+}
+
+/// Whether `value` is an RFC 7638 JWK thumbprint of a SHA-256 hash: 32 bytes
+/// as unpadded base64url, which is exactly 43 characters.
+fn is_jwk_thumbprint(value: &str) -> bool {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    value.len() == 43
+        && URL_SAFE_NO_PAD
+            .decode(value)
+            .is_ok_and(|bytes| bytes.len() == 32)
+}
+
+/// The `cnf` claim of the issued token (RFC 7800, RFC 9449 §6.1 shape):
+/// `{"jkt": <thumbprint>}` and nothing else.
+///
+/// A token is bound only when the requester asks for it and its policy allows
+/// it. A subject token that is already bound is never exchanged into an
+/// unbound or silently re-bound one: the exchange needs the policy's consent
+/// and a new `cnf_jkt`, so a bound token cannot be laundered into a bearer
+/// token.
+fn confirmation_claim(
+    subject: &JwtClaim,
+    requested: Option<&str>,
+    policy: Option<&TokenExchangePolicy>,
+) -> Result<Option<serde_json::Value>, TokenExchangeError> {
+    let allowed = policy.is_some_and(|policy| policy.allow_requested_cnf);
+    let bound = subject.additional_claims.contains_key("cnf");
+
+    match requested {
+        Some(jkt) if allowed => Ok(Some(json!({ "jkt": jkt }))),
+        Some(_) => Err(TokenExchangeError::UnauthorizedClient),
+        None if bound && allowed => Err(TokenExchangeError::InvalidRequest),
+        None if bound => Err(TokenExchangeError::UnauthorizedClient),
+        None => Ok(None),
+    }
 }
 
 /// The `act` claim of the issued token (RFC 8693 §4.1). A new actor wraps
@@ -613,8 +663,15 @@ fn exchanged_claims(
     claims.azp = token.azp;
     claims.scope = token.scope;
     claims.additional_claims = token.mapped;
+    // `act` and `cnf` carry trust decisions. Only this exchange sets them, so
+    // whatever a protocol mapper produced under those names is dropped.
+    claims.additional_claims.remove("act");
+    claims.additional_claims.remove("cnf");
     if let Some(act) = token.act {
         claims.additional_claims.insert("act".to_string(), act);
+    }
+    if let Some(cnf) = token.cnf {
+        claims.additional_claims.insert("cnf".to_string(), cnf);
     }
     // Identity claims now reach tokens only through the mapped claims.
     claims.preferred_username = None;
@@ -715,6 +772,7 @@ mod tests {
                     .map(|scopes| scopes.iter().map(|scope| scope.to_string()).collect()),
                 allow_impersonation: true,
                 allow_delegation: false,
+                allow_requested_cnf: false,
             },
         )
     }
@@ -729,6 +787,7 @@ mod tests {
             scope: scope.map(str::to_string),
             actor_token: None,
             actor_token_type: None,
+            cnf_jkt: None,
             ip_address: None,
             user_agent: None,
         }
@@ -753,6 +812,7 @@ mod tests {
         policy: Option<TokenExchangePolicy>,
         allowed_resources: Vec<String>,
         owned: Vec<(String, Uuid)>,
+        mapper_output: HashMap<String, serde_json::Value>,
         issued: Arc<Mutex<Option<JwtClaim>>>,
         events: Arc<Mutex<Vec<SecurityEvent>>>,
     }
@@ -769,6 +829,7 @@ mod tests {
                 policy: None,
                 allowed_resources: Vec::new(),
                 owned: Vec::new(),
+                mapper_output: HashMap::new(),
                 issued: Arc::default(),
                 events: Arc::default(),
             }
@@ -791,6 +852,12 @@ mod tests {
 
         fn with_owner(mut self, uri: &str, client: &Client) -> Self {
             self.owned.push((uri.to_string(), client.id));
+            self
+        }
+
+        /// Extra claims the stand-in protocol mappers produce.
+        fn with_mapper_output(mut self, name: &str, value: serde_json::Value) -> Self {
+            self.mapper_output.insert(name.to_string(), value);
             self
         }
 
@@ -871,14 +938,16 @@ mod tests {
                 });
             // Stands in for the protocol mappers: says which client shaped the
             // token and for which scope.
+            let mapper_output = self.mapper_output.clone();
             issuer
                 .expect_mapped_claims()
-                .returning(|_, user, client, scope| {
-                    let mapped = HashMap::from([
+                .returning(move |_, user, client, scope| {
+                    let mut mapped = HashMap::from([
                         ("mapped_for".to_string(), json!(client.client_id)),
                         ("mapped_scope".to_string(), json!(scope)),
                         ("mapped_user".to_string(), json!(user.id)),
                     ]);
+                    mapped.extend(mapper_output.clone());
                     Box::pin(async move { Ok(mapped) })
                 });
             let issued = self.issued.clone();
@@ -1859,5 +1928,311 @@ mod tests {
         let events = harness.events();
         let details = events[0].details.clone().expect("details");
         assert_eq!(details["actor"], json!(actor.sub));
+    }
+
+    const JKT: &str = "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs";
+
+    fn binding_policy(realm: &Realm, client: &Client) -> TokenExchangePolicy {
+        let mut policy = policy(realm, client, None);
+        policy.allow_requested_cnf = true;
+        policy
+    }
+
+    fn binding(jkt: &str) -> TokenExchangeInput {
+        let mut input = input(None, Some(AUDIENCE));
+        input.cnf_jkt = Some(jkt.to_string());
+        input
+    }
+
+    fn bound_subject(user: &User) -> JwtClaim {
+        let mut subject = subject_claims(user, REQUESTER, "openid", 3600);
+        subject.additional_claims.insert(
+            "cnf".to_string(),
+            json!({ "jkt": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }),
+        );
+        subject
+    }
+
+    #[test]
+    fn a_thumbprint_is_43_base64url_characters_of_a_sha256_hash() {
+        assert!(is_jwk_thumbprint(JKT));
+        assert!(is_jwk_thumbprint(
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ));
+
+        for rejected in [
+            "",
+            "short",
+            // 42 and 44 characters.
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9X",
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs=",
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xss",
+            // Standard base64 alphabet, not base64url.
+            "NzbLsXh8uDCcd+6MNwXF4W/7noWXFZAfHkxZsRGC9Xs",
+            // Right length, but whitespace and non-alphabet characters.
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9X ",
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9X!",
+            // Non-zero trailing bits: not a canonical encoding of 32 bytes.
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xt",
+        ] {
+            assert!(
+                !is_jwk_thumbprint(rejected),
+                "{rejected:?} must be rejected"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn a_requested_thumbprint_binds_the_token_with_exactly_one_member() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+
+        harness
+            .build()
+            .exchange(params(&realm, binding(JKT)))
+            .await
+            .expect("a policy that allows cnf grants it");
+
+        assert_eq!(
+            harness.issued().additional_claims.get("cnf"),
+            Some(&json!({ "jkt": JKT }))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_requested_thumbprint_is_refused_unless_the_policy_allows_it() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy(&realm, &requester, None));
+
+        let err = harness
+            .build()
+            .exchange(params(&realm, binding(JKT)))
+            .await
+            .expect_err("the policy does not allow requested cnf");
+
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+        assert!(harness.nothing_issued());
+    }
+
+    #[tokio::test]
+    async fn a_requested_thumbprint_needs_a_policy_to_exist() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject);
+
+        let mut no_audience = input(None, None);
+        no_audience.cnf_jkt = Some(JKT.to_string());
+        let err = harness
+            .build()
+            .exchange(params(&realm, no_audience))
+            .await
+            .expect_err("without an audience there is no policy to allow it");
+
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+    }
+
+    #[tokio::test]
+    async fn a_malformed_thumbprint_is_an_invalid_request_even_when_allowed() {
+        let (realm, requester, user) = standard();
+
+        for bad in [
+            "",
+            "not-a-thumbprint",
+            "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9X=",
+        ] {
+            let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+            let harness = Harness::new(&realm, requester.clone(), subject)
+                .with_client(client(&realm, AUDIENCE))
+                .with_policy(binding_policy(&realm, &requester));
+
+            let err = harness
+                .build()
+                .exchange(params(&realm, binding(bad)))
+                .await
+                .expect_err("a malformed thumbprint must be refused");
+
+            assert_eq!(err, TokenExchangeError::InvalidRequest, "{bad:?}");
+            assert!(harness.nothing_issued());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_exchange_without_a_thumbprint_issues_an_unbound_token() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+
+        harness
+            .build()
+            .exchange(params(&realm, input(None, Some(AUDIENCE))))
+            .await
+            .expect("allowing cnf does not force it");
+
+        assert!(!harness.issued().additional_claims.contains_key("cnf"));
+    }
+
+    #[tokio::test]
+    async fn a_bound_subject_token_is_refused_without_a_new_thumbprint() {
+        let (realm, requester, user) = standard();
+
+        // The policy does not allow requested cnf: refused outright.
+        let harness = Harness::new(&realm, requester.clone(), bound_subject(&user))
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy(&realm, &requester, None));
+        let err = harness
+            .build()
+            .exchange(params(&realm, input(None, Some(AUDIENCE))))
+            .await
+            .expect_err("a bound token must not become a bearer token");
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+        assert!(harness.nothing_issued());
+
+        // The policy allows it, but no new thumbprint was supplied.
+        let harness = Harness::new(&realm, requester.clone(), bound_subject(&user))
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+        let err = harness
+            .build()
+            .exchange(params(&realm, input(None, Some(AUDIENCE))))
+            .await
+            .expect_err("a bound token needs a new thumbprint");
+        assert_eq!(err, TokenExchangeError::InvalidRequest);
+        assert!(harness.nothing_issued());
+
+        // Neither without an audience, where no policy can allow it.
+        let harness = Harness::new(&realm, requester.clone(), bound_subject(&user));
+        let err = harness
+            .build()
+            .exchange(params(&realm, input(None, None)))
+            .await
+            .expect_err("a bound token cannot be narrowed without a policy");
+        assert_eq!(err, TokenExchangeError::UnauthorizedClient);
+    }
+
+    #[tokio::test]
+    async fn a_bound_subject_token_is_rebound_to_the_new_thumbprint() {
+        let (realm, requester, user) = standard();
+        let harness = Harness::new(&realm, requester.clone(), bound_subject(&user))
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+
+        harness
+            .build()
+            .exchange(params(&realm, binding(JKT)))
+            .await
+            .expect("a new thumbprint with the policy's consent rebinds");
+
+        assert_eq!(
+            harness.issued().additional_claims.get("cnf"),
+            Some(&json!({ "jkt": JKT })),
+            "the old binding is replaced, never merged or inherited"
+        );
+    }
+
+    #[tokio::test]
+    async fn mapper_output_cannot_forge_cnf_or_act() {
+        let (realm, requester, user) = standard();
+        let forged = json!({ "jkt": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB" });
+
+        // Not asked for: the forged claims vanish.
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester))
+            .with_mapper_output("cnf", forged.clone())
+            .with_mapper_output("act", json!({ "sub": "someone-else" }));
+        harness
+            .build()
+            .exchange(params(&realm, input(None, Some(AUDIENCE))))
+            .await
+            .expect("exchange should succeed");
+        let issued = harness.issued();
+        assert!(!issued.additional_claims.contains_key("cnf"));
+        assert!(!issued.additional_claims.contains_key("act"));
+
+        // Asked for: ours replaces theirs.
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester))
+            .with_mapper_output("cnf", forged);
+        harness
+            .build()
+            .exchange(params(&realm, binding(JKT)))
+            .await
+            .expect("exchange should succeed");
+        assert_eq!(
+            harness.issued().additional_claims.get("cnf"),
+            Some(&json!({ "jkt": JKT }))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_mapper_cannot_replace_the_recorded_delegation() {
+        let (realm, requester, user) = standard();
+        let mut subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        subject
+            .additional_claims
+            .insert("act".to_string(), json!({ "sub": "first-actor" }));
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(policy(&realm, &requester, None))
+            .with_mapper_output("act", json!({ "sub": "forged" }));
+
+        harness
+            .build()
+            .exchange(params(&realm, input(None, Some(AUDIENCE))))
+            .await
+            .expect("exchange should succeed");
+
+        assert_eq!(
+            harness.issued().additional_claims.get("act"),
+            Some(&json!({ "sub": "first-actor" })),
+            "the chain carried over from the subject token is unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_audit_trail_records_the_requested_thumbprint() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+
+        harness
+            .build()
+            .exchange(params(&realm, binding(JKT)))
+            .await
+            .expect("exchange should succeed");
+
+        let details = harness.events()[0].details.clone().expect("details");
+        assert_eq!(details["cnf_jkt"], json!(JKT));
+    }
+
+    #[tokio::test]
+    async fn the_audit_trail_never_records_a_malformed_thumbprint() {
+        let (realm, requester, user) = standard();
+        let subject = subject_claims(&user, REQUESTER, "openid", 3600);
+        let harness = Harness::new(&realm, requester.clone(), subject)
+            .with_client(client(&realm, AUDIENCE))
+            .with_policy(binding_policy(&realm, &requester));
+
+        harness
+            .build()
+            .exchange(params(&realm, binding("<script>alert(1)</script>")))
+            .await
+            .expect_err("a malformed thumbprint is refused");
+
+        let details = harness.events()[0].details.clone().expect("details");
+        assert!(details["cnf_jkt"].is_null());
     }
 }
