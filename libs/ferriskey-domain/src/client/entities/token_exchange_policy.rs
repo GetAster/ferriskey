@@ -20,6 +20,10 @@ pub struct TokenExchangePolicy {
     /// token (`cnf_jkt`), and may exchange a subject token that carries one.
     #[serde(default)]
     pub allow_requested_cnf: bool,
+    /// Together with `allow_delegation`: the client may name an actor it
+    /// vouches for (`actor_assertion`) instead of presenting an actor token.
+    #[serde(default)]
+    pub allow_asserted_actor: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -31,6 +35,7 @@ pub struct TokenExchangePolicyDefinition {
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
     pub allow_requested_cnf: bool,
+    pub allow_asserted_actor: bool,
 }
 
 impl TokenExchangePolicy {
@@ -50,6 +55,7 @@ impl TokenExchangePolicy {
             allow_impersonation: definition.allow_impersonation,
             allow_delegation: definition.allow_delegation,
             allow_requested_cnf: definition.allow_requested_cnf,
+            allow_asserted_actor: definition.allow_asserted_actor,
             created_at: now,
             updated_at: now,
         }

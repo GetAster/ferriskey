@@ -90,6 +90,8 @@ pub struct CreateTokenExchangePolicyRequest {
     pub allow_delegation: bool,
     #[serde(default)]
     pub allow_requested_cnf: bool,
+    #[serde(default)]
+    pub allow_asserted_actor: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

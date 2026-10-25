@@ -524,6 +524,7 @@ token_exchange:
     impersonation: 模拟
     delegation: 委托
     requested_cnf: 密钥绑定
+    asserted_actor: 声明的执行者
     delete: '删除 {{name}} 的策略'
   create:
     title: 新建令牌交换策略
@@ -548,6 +549,9 @@ token_exchange:
     requested_cnf:
       label: 允许密钥绑定
       description: 客户端可以发送 cnf_jkt（密钥指纹）将签发的令牌绑定到该密钥（cnf 声明），也可以交换已绑定的令牌。
+    asserted_actor:
+      label: 允许声明执行者
+      description: 与委托一起使用时，客户端可以用 actor_assertion 指定其担保的执行者，而不必提供 actor_token。act 声明会标记为已声明，并注明该客户端。
     cancel: 取消
     submit: 创建策略
     submitting: 创建中…

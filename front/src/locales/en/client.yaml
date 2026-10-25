@@ -506,6 +506,7 @@ token_exchange:
     impersonation: Impersonation
     delegation: Delegation
     requested_cnf: Key binding
+    asserted_actor: Asserted actor
     delete: 'Delete the policy for {{name}}'
   create:
     title: New token exchange policy
@@ -530,6 +531,9 @@ token_exchange:
     requested_cnf:
       label: Allow key binding
       description: The client may send cnf_jkt, the thumbprint of a key, to bind the issued token to it (cnf claim), and may exchange a token that is already bound.
+    asserted_actor:
+      label: Allow asserted actors
+      description: With delegation, the client may name an actor it vouches for with actor_assertion instead of an actor_token. The act claim is marked asserted and names this client.
     cancel: Cancel
     submit: Create policy
     submitting: Creating…

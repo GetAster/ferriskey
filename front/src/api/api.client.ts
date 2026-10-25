@@ -428,6 +428,7 @@ export namespace Schemas {
     name: string;
   };
   export type CreateTokenExchangePolicyValidator = Partial<{
+    allow_asserted_actor: boolean;
     allow_delegation: boolean;
     allow_impersonation: boolean;
     allow_requested_cnf: boolean;
@@ -1476,6 +1477,7 @@ export namespace Schemas {
     token_type: string;
   };
   export type TokenExchangePolicy = {
+    allow_asserted_actor: boolean;
     allow_delegation: boolean;
     allow_impersonation: boolean;
     allow_requested_cnf: boolean;
@@ -1503,6 +1505,7 @@ export namespace Schemas {
     username?: (string | null) | undefined;
   };
   export type TokenRequestValidator = Partial<{
+    actor_assertion: string | null;
     actor_token: string | null;
     actor_token_type: string | null;
     audience: string | null;

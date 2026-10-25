@@ -117,6 +117,7 @@ where
             allow_impersonation: payload.allow_impersonation,
             allow_delegation: payload.allow_delegation,
             allow_requested_cnf: payload.allow_requested_cnf,
+            allow_asserted_actor: payload.allow_asserted_actor,
         })
     }
 }
@@ -381,6 +382,7 @@ mod tests {
             allow_impersonation: true,
             allow_delegation: false,
             allow_requested_cnf: false,
+            allow_asserted_actor: false,
         }
     }
 
@@ -416,6 +418,7 @@ mod tests {
                             allow_impersonation: true,
                             allow_delegation: false,
                             allow_requested_cnf: false,
+                            allow_asserted_actor: false,
                         }
             })
             .times(1)
@@ -635,6 +638,7 @@ mod tests {
                     allow_impersonation: true,
                     allow_delegation: false,
                     allow_requested_cnf: false,
+                    allow_asserted_actor: false,
                 },
             ),
             TokenExchangePolicy::new(
@@ -646,6 +650,7 @@ mod tests {
                     allow_impersonation: false,
                     allow_delegation: true,
                     allow_requested_cnf: false,
+                    allow_asserted_actor: false,
                 },
             ),
         ];
