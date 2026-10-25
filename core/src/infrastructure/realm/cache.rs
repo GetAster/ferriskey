@@ -100,6 +100,12 @@ impl<R: RealmRepository> RealmRepository for CachedRealmRepository<R> {
         updated
     }
 
+    async fn set_org_root_pubkey(&self, realm_id: RealmId, pubkey: &str) -> Result<(), CoreError> {
+        let stored = self.inner.set_org_root_pubkey(realm_id, pubkey).await;
+        self.invalidate();
+        stored
+    }
+
     async fn delete_by_name(&self, name: &str) -> Result<(), CoreError> {
         let deleted = self.inner.delete_by_name(name).await;
         self.invalidate();
@@ -231,6 +237,7 @@ mod tests {
             id: RealmId::from(Uuid::new_v4()),
             name: name.to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),

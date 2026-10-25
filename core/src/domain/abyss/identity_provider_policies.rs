@@ -24,6 +24,7 @@ mod tests {
             id: RealmId::default(),
             name: name.to_string(),
             display_name: None,
+            org_root_pubkey: None,
             settings: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),

@@ -1,6 +1,6 @@
 use ferriskey_core::domain::{
     jwt::entities::SigningAlgorithm,
-    realm::entities::{LoginAliases, ResourceOwner},
+    realm::entities::{LoginAliases, ResourceOwner, is_valid_org_root_pubkey},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -30,6 +30,13 @@ pub struct UpdateRealmValidator {
     #[validate(length(max = 255, message = "display_name must be at most 255 characters"))]
     #[serde(default)]
     pub display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
+pub struct SetOrgRootValidator {
+    /// The organisation root's Ed25519 public key: 64 lowercase hex characters.
+    #[validate(custom(function = "validate_org_root_pubkey"))]
+    pub org_root_pubkey: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]
@@ -240,12 +247,53 @@ fn validate_signing_algorithm(value: &str) -> Result<(), validator::ValidationEr
     })
 }
 
+fn validate_org_root_pubkey(value: &str) -> Result<(), validator::ValidationError> {
+    if is_valid_org_root_pubkey(value) {
+        Ok(())
+    } else {
+        Err(validator::ValidationError::new(
+            "org_root_pubkey must be 64 lowercase hex characters",
+        ))
+    }
+}
+
 fn validate_encryption(value: &str) -> Result<(), validator::ValidationError> {
     match value {
         "tls" | "starttls" | "none" => Ok(()),
         _ => Err(validator::ValidationError::new(
             "encryption must be one of: tls, starttls, none",
         )),
+    }
+}
+
+#[cfg(test)]
+mod set_org_root_validator_tests {
+    use super::SetOrgRootValidator;
+    use validator::Validate;
+
+    const ROOT: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    fn accepted(value: &str) -> bool {
+        SetOrgRootValidator {
+            org_root_pubkey: value.to_string(),
+        }
+        .validate()
+        .is_ok()
+    }
+
+    #[test]
+    fn accepts_64_lowercase_hex_characters() {
+        assert!(accepted(ROOT));
+    }
+
+    #[test]
+    fn rejects_the_wrong_length_uppercase_and_non_hex() {
+        let uppercase = ROOT.to_uppercase();
+        let not_hex = format!("{}zz", &ROOT[..62]);
+        let too_long = format!("{ROOT}0");
+        for rejected in ["", &ROOT[..63], too_long.as_str(), &uppercase, &not_hex] {
+            assert!(!accepted(rejected), "{rejected:?} must be rejected");
+        }
     }
 }
 
