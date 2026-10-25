@@ -16,6 +16,10 @@ pub struct TokenExchangePolicy {
     pub allowed_scopes: Option<Vec<String>>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    /// The client may ask for a `cnf.jkt` confirmation claim on the issued
+    /// token (`cnf_jkt`), and may exchange a subject token that carries one.
+    #[serde(default)]
+    pub allow_requested_cnf: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -26,6 +30,7 @@ pub struct TokenExchangePolicyDefinition {
     pub allowed_scopes: Option<Vec<String>>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    pub allow_requested_cnf: bool,
 }
 
 impl TokenExchangePolicy {
@@ -44,6 +49,7 @@ impl TokenExchangePolicy {
             allowed_scopes: definition.allowed_scopes,
             allow_impersonation: definition.allow_impersonation,
             allow_delegation: definition.allow_delegation,
+            allow_requested_cnf: definition.allow_requested_cnf,
             created_at: now,
             updated_at: now,
         }

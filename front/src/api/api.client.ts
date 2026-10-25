@@ -430,6 +430,7 @@ export namespace Schemas {
   export type CreateTokenExchangePolicyValidator = Partial<{
     allow_delegation: boolean;
     allow_impersonation: boolean;
+    allow_requested_cnf: boolean;
     allowed_scopes: Array<string> | null;
     target_audience: string;
   }>;
@@ -1474,6 +1475,7 @@ export namespace Schemas {
   export type TokenExchangePolicy = {
     allow_delegation: boolean;
     allow_impersonation: boolean;
+    allow_requested_cnf: boolean;
     allowed_scopes?: (Array<string> | null) | undefined;
     client_id: string;
     created_at: string;
@@ -1503,6 +1505,7 @@ export namespace Schemas {
     audience: string | null;
     client_id: string | null;
     client_secret: string | null;
+    cnf_jkt: string | null;
     code: string | null;
     code_verifier: string | null;
     device_code: string | null;

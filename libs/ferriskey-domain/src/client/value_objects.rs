@@ -88,6 +88,8 @@ pub struct CreateTokenExchangePolicyRequest {
     pub allowed_scopes: Option<Vec<String>>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    #[serde(default)]
+    pub allow_requested_cnf: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
