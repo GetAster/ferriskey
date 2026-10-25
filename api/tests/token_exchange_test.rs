@@ -384,6 +384,7 @@ mod tests {
                     scope: scope.map(str::to_string),
                     actor_token: None,
                     actor_token_type: None,
+                    cnf_jkt: None,
                     ip_address: None,
                     user_agent: None,
                 },
@@ -664,6 +665,7 @@ mod tests {
                 "resource",
                 "actor_token",
                 "actor_token_type",
+                "cnf_jkt",
             ] {
                 assert!(
                     request.get(field).is_some(),
@@ -1121,6 +1123,193 @@ mod tests {
             let mut expected = link.clone();
             expected["act"] = link;
             assert_eq!(issued["act"], expected);
+        });
+    }
+
+    const JKT: &str = "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs";
+    const OTHER_JKT: &str = "0ZcOCORZNYy-DWpqq30jZyJGHTN0d2HglBV3uiguA4I";
+
+    /// Creates a policy that also lets `client` ask for a `cnf` claim.
+    async fn create_binding_policy(
+        server: &TestServer,
+        client: &TestClient,
+        audience: &TestClient,
+    ) -> Value {
+        let master = master_token(server).await;
+        let response = server
+            .post(&format!(
+                "/realms/{REALM}/clients/{}/token-exchange-policies",
+                client.uuid
+            ))
+            .add_header("Authorization", auth_header(&master))
+            .json(&json!({
+                "target_audience": audience.client_id,
+                "allowed_scopes": ["profile"],
+                "allow_impersonation": true,
+                "allow_delegation": false,
+                "allow_requested_cnf": true,
+            }))
+            .await;
+        assert_eq!(response.status_code(), 201, "{}", response.text());
+        response.json::<Value>()
+    }
+
+    async fn binding_exchange(
+        server: &TestServer,
+        client: &TestClient,
+        subject_token: &str,
+        audience: &TestClient,
+        cnf_jkt: Option<&str>,
+    ) -> axum_test::TestResponse {
+        let mut form = vec![
+            ("grant_type", TOKEN_EXCHANGE_GRANT),
+            ("client_id", client.client_id.as_str()),
+            ("client_secret", client.secret.as_str()),
+            ("subject_token", subject_token),
+            ("subject_token_type", ACCESS_TOKEN_URN),
+            ("audience", audience.client_id.as_str()),
+        ];
+        if let Some(jkt) = cnf_jkt {
+            form.push(("cnf_jkt", jkt));
+        }
+        server.post(&token_path()).form(&form).await
+    }
+
+    fn access_token_of(response: &axum_test::TestResponse) -> String {
+        assert_eq!(response.status_code(), 200, "{}", response.text());
+        response.json::<Value>()["access_token"]
+            .as_str()
+            .expect("access_token")
+            .to_string()
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_policy_reports_whether_it_allows_requested_cnf() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            let created = create_binding_policy(&server, &gateway, &orders).await;
+            assert_eq!(created["allow_requested_cnf"], json!(true));
+
+            let billing = create_client(&server, "billing", false).await;
+            let listed = server
+                .get(&format!(
+                    "/realms/{REALM}/clients/{}/token-exchange-policies",
+                    gateway.uuid
+                ))
+                .add_header("Authorization", auth_header(&master_token(&server).await))
+                .await;
+            assert_eq!(listed.status_code(), 200, "{}", listed.text());
+            assert_eq!(
+                listed.json::<Value>()[0]["allow_requested_cnf"],
+                json!(true)
+            );
+            let _ = billing;
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_requested_thumbprint_becomes_the_cnf_claim() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_binding_policy(&server, &gateway, &orders).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            let response =
+                binding_exchange(&server, &gateway, &subject_token, &orders, Some(JKT)).await;
+            let issued = claims(&access_token_of(&response));
+
+            assert_eq!(issued["cnf"], json!({ "jkt": JKT }));
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_requested_thumbprint_is_refused_without_the_policy_flag() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_policy(&server, &gateway, &orders, &["profile"], true, false).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            let response =
+                binding_exchange(&server, &gateway, &subject_token, &orders, Some(JKT)).await;
+
+            assert_oauth_error(&response, 400, "unauthorized_client");
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_malformed_thumbprint_is_an_invalid_request() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_binding_policy(&server, &gateway, &orders).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            for bad in [
+                "",
+                "short",
+                "NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs=",
+                "a b",
+            ] {
+                let response =
+                    binding_exchange(&server, &gateway, &subject_token, &orders, Some(bad)).await;
+                assert_oauth_error(&response, 400, "invalid_request");
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_bound_token_is_exchanged_only_with_a_new_thumbprint() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            create_binding_policy(&server, &gateway, &orders).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+            let bound = access_token_of(
+                &binding_exchange(&server, &gateway, &subject_token, &orders, Some(JKT)).await,
+            );
+
+            let refused = binding_exchange(&server, &gateway, &bound, &orders, None).await;
+            assert_oauth_error(&refused, 400, "invalid_request");
+
+            let rebound = access_token_of(
+                &binding_exchange(&server, &gateway, &bound, &orders, Some(OTHER_JKT)).await,
+            );
+            assert_eq!(claims(&rebound)["cnf"], json!({ "jkt": OTHER_JKT }));
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn a_bound_token_cannot_become_a_bearer_token() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            let billing = create_client(&server, "billing", false).await;
+            create_binding_policy(&server, &gateway, &orders).await;
+            // A second audience whose policy does not allow requested cnf.
+            create_policy(&server, &gateway, &billing, &["profile"], true, false).await;
+            let subject_token = subject_token_for(&server, &gateway).await;
+            let bound = access_token_of(
+                &binding_exchange(&server, &gateway, &subject_token, &orders, Some(JKT)).await,
+            );
+
+            let response = binding_exchange(&server, &gateway, &bound, &billing, None).await;
+
+            assert_oauth_error(&response, 400, "unauthorized_client");
         });
     }
 }

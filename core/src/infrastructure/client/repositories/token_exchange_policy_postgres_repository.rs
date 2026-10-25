@@ -34,6 +34,7 @@ impl From<PolicyModel> for TokenExchangePolicy {
             allowed_scopes: scopes_from_column(model.allowed_scopes),
             allow_impersonation: model.allow_impersonation,
             allow_delegation: model.allow_delegation,
+            allow_requested_cnf: model.allow_requested_cnf,
             created_at: DateTime::<Utc>::from_naive_utc_and_offset(model.created_at, Utc),
             updated_at: DateTime::<Utc>::from_naive_utc_and_offset(model.updated_at, Utc),
         }
@@ -68,6 +69,7 @@ impl TokenExchangePolicyRepository for PostgresTokenExchangePolicyRepository {
             allowed_scopes: Set(scopes_to_column(policy.allowed_scopes.as_deref())),
             allow_impersonation: Set(policy.allow_impersonation),
             allow_delegation: Set(policy.allow_delegation),
+            allow_requested_cnf: Set(policy.allow_requested_cnf),
             created_at: Set(policy.created_at.naive_utc()),
             updated_at: Set(policy.updated_at.naive_utc()),
         };
@@ -239,6 +241,7 @@ mod tests {
             allowed_scopes: Some(vec!["orders:read".to_string()]),
             allow_impersonation: true,
             allow_delegation: false,
+            allow_requested_cnf: false,
         }
     }
 

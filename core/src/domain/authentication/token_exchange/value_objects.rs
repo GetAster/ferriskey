@@ -44,6 +44,10 @@ pub struct TokenExchangeInput {
     /// Token-type URN of `actor_token`; required with it, forbidden without.
     #[serde(default)]
     pub actor_token_type: Option<String>,
+    /// RFC 7638 SHA-256 thumbprint (base64url) of the key the issued token is
+    /// bound to; becomes `cnf.jkt`. Needs `allow_requested_cnf` on the policy.
+    #[serde(default)]
+    pub cnf_jkt: Option<String>,
     #[serde(skip)]
     pub ip_address: Option<String>,
     #[serde(skip)]

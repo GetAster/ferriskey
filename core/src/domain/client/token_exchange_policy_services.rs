@@ -116,6 +116,7 @@ where
             allowed_scopes,
             allow_impersonation: payload.allow_impersonation,
             allow_delegation: payload.allow_delegation,
+            allow_requested_cnf: payload.allow_requested_cnf,
         })
     }
 }
@@ -379,6 +380,7 @@ mod tests {
                 .map(|scopes| scopes.into_iter().map(str::to_string).collect()),
             allow_impersonation: true,
             allow_delegation: false,
+            allow_requested_cnf: false,
         }
     }
 
@@ -413,6 +415,7 @@ mod tests {
                             ]),
                             allow_impersonation: true,
                             allow_delegation: false,
+                            allow_requested_cnf: false,
                         }
             })
             .times(1)
@@ -631,6 +634,7 @@ mod tests {
                     allowed_scopes: None,
                     allow_impersonation: true,
                     allow_delegation: false,
+                    allow_requested_cnf: false,
                 },
             ),
             TokenExchangePolicy::new(
@@ -641,6 +645,7 @@ mod tests {
                     allowed_scopes: Some(vec!["billing:read".to_string()]),
                     allow_impersonation: false,
                     allow_delegation: true,
+                    allow_requested_cnf: false,
                 },
             ),
         ];
