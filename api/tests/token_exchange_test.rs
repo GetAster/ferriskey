@@ -1460,4 +1460,58 @@ mod tests {
             }
         });
     }
+
+    #[test]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    fn an_asserted_actor_and_a_bound_key_travel_in_one_token() {
+        rt().block_on(async {
+            let server = make_server();
+            let gateway = create_client(&server, "gateway", true).await;
+            let orders = create_client(&server, "orders", false).await;
+            let master = master_token(&server).await;
+            let created = server
+                .post(&format!(
+                    "/realms/{REALM}/clients/{}/token-exchange-policies",
+                    gateway.uuid
+                ))
+                .add_header("Authorization", auth_header(&master))
+                .json(&json!({
+                    "target_audience": orders.client_id,
+                    "allowed_scopes": ["profile"],
+                    "allow_impersonation": false,
+                    "allow_delegation": true,
+                    "allow_asserted_actor": true,
+                    "allow_requested_cnf": true,
+                }))
+                .await;
+            assert_eq!(created.status_code(), 201, "{}", created.text());
+            let subject_token = subject_token_for(&server, &gateway).await;
+
+            let response = server
+                .post(&token_path())
+                .form(&[
+                    ("grant_type", TOKEN_EXCHANGE_GRANT),
+                    ("client_id", gateway.client_id.as_str()),
+                    ("client_secret", gateway.secret.as_str()),
+                    ("subject_token", subject_token.as_str()),
+                    ("subject_token_type", ACCESS_TOKEN_URN),
+                    ("audience", orders.client_id.as_str()),
+                    ("actor_assertion", ASSERTED),
+                    ("cnf_jkt", JKT),
+                ])
+                .await;
+            assert_eq!(response.status_code(), 200, "{}", response.text());
+            let issued = claims(
+                response.json::<Value>()["access_token"]
+                    .as_str()
+                    .expect("token"),
+            );
+
+            assert_eq!(
+                issued["act"],
+                json!({ "sub": ASSERTED, "client_id": gateway.client_id, "asserted": true })
+            );
+            assert_eq!(issued["cnf"], json!({ "jkt": JKT }));
+        });
+    }
 }
