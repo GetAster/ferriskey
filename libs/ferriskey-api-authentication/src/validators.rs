@@ -76,6 +76,13 @@ pub struct TokenRequestValidator {
     // `urn:ietf:params:oauth:token-type:access_token` is supported.
     #[serde(default)]
     pub actor_token_type: Option<String>,
+
+    // Token exchange delegation, without an actor token: a name the requesting
+    // client vouches for (1-256 bytes, no control characters). Emitted as
+    // `act.sub` with `asserted: true`. Exclusive with `actor_token`; the
+    // client's policy must allow it (`allow_asserted_actor`).
+    #[serde(default)]
+    pub actor_assertion: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]

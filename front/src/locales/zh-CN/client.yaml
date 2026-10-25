@@ -523,6 +523,7 @@ token_exchange:
     no_scope_cap: 无作用域上限
     impersonation: 模拟
     delegation: 委托
+    asserted_actor: 声明的执行者
     delete: '删除 {{name}} 的策略'
   create:
     title: 新建令牌交换策略
@@ -544,6 +545,9 @@ token_exchange:
     delegation:
       label: 允许委托
       description: 客户端可以使用 actor_token 进行交换，令牌中将加入 act 声明。
+    asserted_actor:
+      label: 允许声明执行者
+      description: 与委托一起使用时，客户端可以用 actor_assertion 指定其担保的执行者，而不必提供 actor_token。act 声明会标记为已声明，并注明该客户端。
     cancel: 取消
     submit: 创建策略
     submitting: 创建中…

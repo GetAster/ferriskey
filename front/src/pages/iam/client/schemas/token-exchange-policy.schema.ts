@@ -8,6 +8,7 @@ export const tokenExchangePolicySchema = z.object({
   allowedScopes: z.array(z.string()),
   allowImpersonation: z.boolean(),
   allowDelegation: z.boolean(),
+  allowAssertedActor: z.boolean(),
 })
 
 export type TokenExchangePolicySchema = z.infer<typeof tokenExchangePolicySchema>

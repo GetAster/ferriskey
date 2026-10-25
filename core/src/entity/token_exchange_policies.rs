@@ -14,6 +14,7 @@ pub struct Model {
     pub allowed_scopes: Option<String>,
     pub allow_impersonation: bool,
     pub allow_delegation: bool,
+    pub allow_asserted_actor: bool,
     pub created_at: DateTime,
     pub updated_at: DateTime,
 }

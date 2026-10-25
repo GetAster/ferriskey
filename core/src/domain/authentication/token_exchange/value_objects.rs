@@ -44,6 +44,11 @@ pub struct TokenExchangeInput {
     /// Token-type URN of `actor_token`; required with it, forbidden without.
     #[serde(default)]
     pub actor_token_type: Option<String>,
+    /// An actor the requesting client vouches for, in place of an
+    /// `actor_token`; becomes `act.sub` with `asserted: true`. Needs
+    /// `allow_asserted_actor` and `allow_delegation` on the policy.
+    #[serde(default)]
+    pub actor_assertion: Option<String>,
     #[serde(skip)]
     pub ip_address: Option<String>,
     #[serde(skip)]

@@ -143,6 +143,7 @@ const EMPTY_FORM: TokenExchangePolicySchema = {
   allowedScopes: [],
   allowImpersonation: false,
   allowDelegation: false,
+  allowAssertedActor: false,
 }
 
 function CreatePolicyDialog({
@@ -251,6 +252,20 @@ function CreatePolicyDialog({
             />
           </FieldRow>
 
+          <FieldRow
+            layout='stacked'
+            label={t('token_exchange.create.asserted_actor.label')}
+            description={t('token_exchange.create.asserted_actor.description')}
+          >
+            <Controller
+              control={control}
+              name='allowAssertedActor'
+              render={({ field }) => (
+                <SwitchField checked={field.value} onCheckedChange={field.onChange} />
+              )}
+            />
+          </FieldRow>
+
           <DialogFooter>
             <Button
               type='button'
@@ -347,6 +362,9 @@ export default function ClientTokenExchangeTab({
                 </Pill>
                 <Pill tone={policy.allow_delegation ? 'success' : 'neutral'}>
                   {t('token_exchange.list.delegation')}
+                </Pill>
+                <Pill tone={policy.allow_asserted_actor ? 'success' : 'neutral'}>
+                  {t('token_exchange.list.asserted_actor')}
                 </Pill>
 
                 <Button
