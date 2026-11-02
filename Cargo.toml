@@ -34,3 +34,9 @@ strip = "symbols"
 # Slower to build, noticeably smaller (and faster) binaries.
 lto = "thin"
 codegen-units = 1
+
+# rust-dev house rule: no full-DWARF dev/test builds. CI's
+# CARGO_PROFILE_DEV_DEBUG and the Mac's global cargo config override this
+# with line-tables-only; this covers bare builds.
+[profile.dev]
+debug = 0

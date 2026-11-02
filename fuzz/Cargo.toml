@@ -41,3 +41,8 @@ path = "fuzz_targets/c14n.rs"
 test = false
 doc = false
 bench = false
+
+# rust-dev house rule: no full-DWARF dev/test builds (nested workspace does
+# not inherit the repository root's [profile.dev]).
+[profile.dev]
+debug = 0
