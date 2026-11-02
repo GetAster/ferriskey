@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_client_narrows_its_own_token_and_the_result_verifies() {
         rt().block_on(async {
             let server = make_server();
@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn an_audience_needs_a_policy_and_is_capped_by_it() {
         rt().block_on(async {
             let server = make_server();
@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_client_without_the_flag_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_client_cannot_exchange_a_token_it_is_not_a_party_to() {
         rt().block_on(async {
             let server = make_server();
@@ -505,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_answers_with_the_rfc8693_body_and_no_cookie() {
         rt().block_on(async {
             let server = make_server();
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_accepts_basic_client_authentication() {
         rt().block_on(async {
             let server = make_server();
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_refuses_a_bad_secret_with_a_401_challenge() {
         rt().block_on(async {
             let server = make_server();
@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_errors_use_the_rfc6749_body() {
         rt().block_on(async {
             let server = make_server();
@@ -648,7 +648,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn the_openapi_document_describes_the_rfc8693_request_and_response() {
         rt().block_on(async {
             let server = make_server();
@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_refuses_a_public_client() {
         rt().block_on(async {
             let server = make_server();
@@ -773,7 +773,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_refuses_an_unusable_subject_token() {
         rt().block_on(async {
             let server = make_server();
@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn token_endpoint_refuses_a_subject_token_of_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -826,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn an_exchanged_token_dies_with_the_subject_session() {
         rt().block_on(async {
             let server = make_server();
@@ -879,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn discovery_advertises_every_live_grant() {
         rt().block_on(async {
             let server = make_server();
@@ -938,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_policy_without_impersonation_refuses_a_plain_exchange() {
         rt().block_on(async {
             let server = make_server();
@@ -954,7 +954,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn deleting_the_policy_stops_the_next_exchange() {
         rt().block_on(async {
             let server = make_server();
@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_delegated_exchange_carries_the_act_claim() {
         rt().block_on(async {
             let server = make_server();
@@ -1051,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn delegation_is_refused_without_allow_delegation() {
         rt().block_on(async {
             let server = make_server();
@@ -1069,7 +1069,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn an_actor_token_of_another_client_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1089,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_test:: -- --include-ignored"]
     fn a_chained_delegation_nests_the_previous_act() {
         rt().block_on(async {
             let server = make_server();

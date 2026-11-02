@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn an_authorization_code_is_refused_at_another_realms_token_endpoint() {
         rt().block_on(async {
             let server = make_server();
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn a_refresh_token_is_refused_at_another_realms_token_endpoint() {
         rt().block_on(async {
             let server = make_server();
@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn client_credentials_of_one_realm_are_refused_on_another() {
         rt().block_on(async {
             let server = make_server();
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn a_client_credentials_grant_is_refused_when_its_service_account_sits_in_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn an_access_token_does_not_introspect_as_active_in_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -816,7 +816,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn a_revocation_aimed_from_another_realm_leaves_the_token_alive() {
         rt().block_on(async {
             let server = make_server();
@@ -869,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn userinfo_refuses_a_token_minted_by_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -921,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test oidc_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it oidc_cross_realm_test:: -- --include-ignored"]
     fn an_unknown_realm_never_answers_with_another_realms_account() {
         rt().block_on(async {
             let server = make_server();

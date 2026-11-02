@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_client_with_consent_required_false_never_reaches_the_consent_screen() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_client_requiring_consent_redirects_to_the_consent_screen_and_the_token_round_trips() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn denying_every_optional_scope_redirects_with_access_denied() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn an_unknown_consent_token_is_rejected_without_revealing_why() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -451,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_client_requiring_consent_with_no_optional_scopes_requested_skips_the_screen() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -472,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_consent_token_lives_in_the_database_and_not_in_process_memory() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_consent_token_is_useless_without_the_browser_session() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn a_spent_consent_token_cannot_be_replayed() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn approving_consent_after_a_fresh_login_hands_the_browser_its_sso_session() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -770,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn consenting_after_an_sso_resume_does_not_reauthenticate_the_session() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -814,7 +814,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test consent_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it consent_test:: -- --include-ignored"]
     fn consenting_after_the_resumed_sso_session_was_revoked_issues_no_code() {
         let srv = server();
         let realm = ctx().realm_name.clone();

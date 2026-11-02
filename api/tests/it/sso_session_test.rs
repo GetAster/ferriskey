@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_second_application_signs_in_from_the_session_cookie() {
         let _serial = serial();
         rt().block_on(async {
@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn the_login_hands_the_browser_an_opaque_session_cookie() {
         let _serial = serial();
         rt().block_on(async {
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn the_second_application_joins_the_session_instead_of_opening_another() {
         let _serial = serial();
         rt().block_on(async {
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn resuming_a_session_is_recorded_as_a_login() {
         let _serial = serial();
         rt().block_on(async {
@@ -545,7 +545,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_disabled_user_cannot_resume_a_session() {
         let _serial = serial();
         rt().block_on(async {
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn an_unknown_session_falls_back_to_the_login_page() {
         let _serial = serial();
         rt().block_on(async {
@@ -594,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn no_cookie_means_the_ordinary_login_page() {
         let _serial = serial();
         rt().block_on(async {
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_code_bound_to_a_live_session_is_exchanged() {
         let _serial = serial();
         rt().block_on(async {
@@ -691,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_code_whose_session_was_revoked_is_refused() {
         let _serial = serial();
         rt().block_on(async {
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_code_whose_session_is_being_revoked_is_refused() {
         let _serial = serial();
         rt().block_on(async {
@@ -777,7 +777,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn an_otp_login_hands_out_the_session_cookie() {
         let _serial = serial();
         rt().block_on(async {
@@ -851,7 +851,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn the_token_endpoint_hands_out_no_cookie() {
         let _serial = serial();
         rt().block_on(async {
@@ -871,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_legacy_identity_cookie_no_longer_signs_in() {
         let _serial = serial();
         rt().block_on(async {
@@ -963,7 +963,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn without_remember_me_the_cookie_dies_with_the_browser() {
         let _serial = serial();
         rt().block_on(async {
@@ -983,7 +983,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn remember_me_keeps_the_cookie_past_the_browser() {
         let _serial = serial();
         rt().block_on(async {
@@ -1016,7 +1016,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_realm_without_remember_me_ignores_the_request() {
         let _serial = serial();
         rt().block_on(async {
@@ -1035,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn remember_me_survives_the_otp_step() {
         let _serial = serial();
         rt().block_on(async {
@@ -1117,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn prompt_none_answers_from_the_session() {
         let _serial = serial();
         rt().block_on(async {
@@ -1136,7 +1136,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn prompt_none_without_a_session_hands_back_login_required() {
         let _serial = serial();
         rt().block_on(async {
@@ -1156,7 +1156,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn prompt_none_combined_with_another_value_is_an_invalid_request() {
         let _serial = serial();
         rt().block_on(async {
@@ -1175,7 +1175,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn prompt_login_re_authenticates_into_the_same_session() {
         let _serial = serial();
         rt().block_on(async {
@@ -1226,7 +1226,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn max_age_asks_for_a_fresh_login_only_when_exceeded() {
         let _serial = serial();
         rt().block_on(async {
@@ -1263,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn the_id_token_carries_the_authentication_time() {
         let _serial = serial();
         rt().block_on(async {
@@ -1303,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test sso_session_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it sso_session_test:: -- --include-ignored"]
     fn a_user_with_no_credential_cannot_login() {
         let _serial = serial();
         rt().block_on(async {

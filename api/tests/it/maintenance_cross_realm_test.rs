@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn reading_the_whitelist_of_a_client_of_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -332,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn removing_a_whitelist_entry_of_a_client_of_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn removing_a_whitelist_entry_of_another_client_through_an_owned_client_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn removing_a_realm_whitelist_entry_of_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn whitelisting_a_user_on_a_client_of_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn whitelisting_a_role_on_a_client_of_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -495,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn the_whitelist_of_a_client_of_the_caller_realm_stays_manageable() {
         rt().block_on(async {
             let server = make_server();
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test maintenance_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it maintenance_cross_realm_test:: -- --include-ignored"]
     fn the_whitelist_of_the_caller_realm_stays_manageable() {
         rt().block_on(async {
             let server = make_server();

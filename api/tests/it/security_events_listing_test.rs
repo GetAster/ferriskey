@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn no_params_returns_the_first_twenty_newest_events() {
         let server = make_server();
         rt().block_on(async {
@@ -653,7 +653,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn every_sort_field_orders_both_ways_without_gaps_or_duplicates() {
         let server = make_server();
         rt().block_on(async {
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn every_filter_returns_exactly_the_matching_events() {
         let server = make_server();
         let [alice, bob] = ctx().actors;
@@ -782,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn events_of_other_realms_are_never_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -823,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn callers_without_rights_list_nothing() {
         let server = make_server();
         rt().block_on(async {
@@ -863,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn like_wildcards_match_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn search_matches_the_ip_address_only() {
         let server = make_server();
         let cases: [(&str, HashSet<Uuid>); 3] = [
@@ -927,7 +927,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn search_matches_like_wildcards_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -944,7 +944,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test security_events_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it security_events_listing_test:: -- --include-ignored"]
     fn invalid_query_parameters_are_rejected() {
         let server = make_server();
         rt().block_on(async {

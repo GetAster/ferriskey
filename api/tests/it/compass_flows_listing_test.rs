@@ -641,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn no_params_returns_the_first_twenty_newest_flows() {
         let server = make_server();
         rt().block_on(async {
@@ -690,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn every_listed_flow_carries_its_steps() {
         let server = make_server();
         rt().block_on(async {
@@ -717,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn every_sort_field_orders_both_ways_without_gaps_or_duplicates() {
         let server = make_server();
         rt().block_on(async {
@@ -748,7 +748,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn unfinished_flows_sort_last_by_duration_ascending_and_first_descending() {
         let server = make_server();
         rt().block_on(async {
@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn every_filter_returns_exactly_the_matching_flows() {
         let server = make_server();
         let alice = ctx().users[0];
@@ -884,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn flows_of_other_realms_are_never_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -931,7 +931,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn callers_without_rights_list_nothing() {
         let server = make_server();
         rt().block_on(async {
@@ -966,7 +966,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn like_wildcards_match_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -992,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn search_matches_the_ip_address_only() {
         let server = make_server();
         let cases: [(&str, HashSet<Uuid>); 3] = [
@@ -1030,7 +1030,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn search_matches_like_wildcards_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -1047,7 +1047,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test compass_flows_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it compass_flows_listing_test:: -- --include-ignored"]
     fn invalid_query_parameters_are_rejected() {
         let server = make_server();
         rt().block_on(async {

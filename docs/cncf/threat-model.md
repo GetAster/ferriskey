@@ -43,37 +43,37 @@ Weaknesses that are not fixed yet are not listed in this file. They go through t
 
 | Threat | Mitigation in place | Evidence |
 | --- | --- | --- |
-| Authorization code stolen in transit or from logs | PKCE with S256, required at registration for public clients and for new clients unless they opt out | `api/tests/pkce_test.rs` |
-| Redirect to an attacker address | Redirect URIs matched against the client's registered values; post-logout redirect must equal a registered value | `api/tests/redirect_uri_validation_test.rs`, `api/tests/features/oidc/logout.feature` |
-| Password guessing | Argon2id hashing, legacy hashes rehashed on login, per-realm account lockout (10 failures, 15 minutes by default) | `api/tests/account_lockout_test.rs` |
-| MFA bypass by replaying a step token | The login-action token is single use | `api/tests/mfa_bypass_test.rs` |
-| Recovery code or magic link reuse | Recovery codes stored hashed, burnt on use | `api/tests/trident_cross_realm_test.rs` |
-| Session cookie theft through scripts | Session cookies are `HttpOnly` and `SameSite=Lax`, `Secure` on HTTPS | `api/tests/sso_session_test.rs` |
-| Login or MFA step replayed through another realm's URL | Every step is bound to the realm of its session | `api/tests/trident_cross_realm_test.rs`, `api/tests/auth_session_cross_realm_test.rs` |
-| ID token replay | `nonce` carried from the request into the ID token | `api/tests/nonce_id_token_test.rs` |
+| Authorization code stolen in transit or from logs | PKCE with S256, required at registration for public clients and for new clients unless they opt out | `api/tests/it/pkce_test.rs` |
+| Redirect to an attacker address | Redirect URIs matched against the client's registered values; post-logout redirect must equal a registered value | `api/tests/it/redirect_uri_validation_test.rs`, `api/tests/features/oidc/logout.feature` |
+| Password guessing | Argon2id hashing, legacy hashes rehashed on login, per-realm account lockout (10 failures, 15 minutes by default) | `api/tests/it/account_lockout_test.rs` |
+| MFA bypass by replaying a step token | The login-action token is single use | `api/tests/it/mfa_bypass_test.rs` |
+| Recovery code or magic link reuse | Recovery codes stored hashed, burnt on use | `api/tests/it/trident_cross_realm_test.rs` |
+| Session cookie theft through scripts | Session cookies are `HttpOnly` and `SameSite=Lax`, `Secure` on HTTPS | `api/tests/it/sso_session_test.rs` |
+| Login or MFA step replayed through another realm's URL | Every step is bound to the realm of its session | `api/tests/it/trident_cross_realm_test.rs`, `api/tests/it/auth_session_cross_realm_test.rs` |
+| ID token replay | `nonce` carried from the request into the ID token | `api/tests/it/nonce_id_token_test.rs` |
 
 ## Flow 2 - Token endpoint
 
 | Threat | Mitigation in place | Evidence |
 | --- | --- | --- |
-| Code redeemed by another client, another realm, another redirect URI, or after expiry | The code is bound to its client, realm, redirect URI and protocol, expires after 10 minutes, and is claimed atomically | `api/tests/oidc_conformance_test.rs`, `api/tests/oidc_cross_realm_test.rs` |
+| Code redeemed by another client, another realm, another redirect URI, or after expiry | The code is bound to its client, realm, redirect URI and protocol, expires after 10 minutes, and is claimed atomically | `api/tests/it/oidc_conformance_test.rs`, `api/tests/it/oidc_cross_realm_test.rs` |
 | Code replay | A second redemption is refused and revokes the tokens the code produced | `api/tests/features/oidc/authorization_code.feature` |
-| Refresh token theft | Rotation on every use; reuse of a rotated token revokes the whole family | `api/tests/refresh_token_rotation_test.rs`, `api/tests/features/oidc/token_endpoint.feature` |
-| Confidential client impersonation | Client authentication by `client_secret_basic` or `client_secret_post`, compared in constant time, the same way on every OAuth endpoint | `api/tests/token_basic_auth_test.rs` |
-| Introspection used as an oracle | Introspection requires a confidential client with the `introspect` role | `api/tests/token_revocation_test.rs` |
-| Token exchange used to escalate | Exchange disabled by default per client; delegation and impersonation are separate opt-ins; audiences limited to resources the client owns | `api/tests/token_exchange_test.rs`, `api/tests/token_exchange_policy_test.rs` |
+| Refresh token theft | Rotation on every use; reuse of a rotated token revokes the whole family | `api/tests/it/refresh_token_rotation_test.rs`, `api/tests/features/oidc/token_endpoint.feature` |
+| Confidential client impersonation | Client authentication by `client_secret_basic` or `client_secret_post`, compared in constant time, the same way on every OAuth endpoint | `api/tests/it/token_basic_auth_test.rs` |
+| Introspection used as an oracle | Introspection requires a confidential client with the `introspect` role | `api/tests/it/token_revocation_test.rs` |
+| Token exchange used to escalate | Exchange disabled by default per client; delegation and impersonation are separate opt-ins; audiences limited to resources the client owns | `api/tests/it/token_exchange_test.rs`, `api/tests/it/token_exchange_policy_test.rs` |
 | Long-lived stolen access token | Access tokens last 300 seconds by default, refresh tokens 24 hours, both configurable per client | realm and client settings |
 
 ## Flow 3 - Admin API
 
 | Threat | Mitigation in place | Evidence |
 | --- | --- | --- |
-| A realm administrator reads or changes another realm | Realm is resolved through one scoped resolver; a source-level test freezes the list of files allowed to bypass it | `api/tests/realm_scope_ratchet_test.rs` |
-| Probing which realms or objects exist | A missing right in one's own realm answers 403; a foreign realm, and any object it holds, answers 404 | `api/tests/realm_cross_realm_test.rs`, `api/tests/*_cross_realm_test.rs` |
+| A realm administrator reads or changes another realm | Realm is resolved through one scoped resolver; a source-level test freezes the list of files allowed to bypass it | `api/tests/it/realm_scope_ratchet_test.rs` |
+| Probing which realms or objects exist | A missing right in one's own realm answers 403; a foreign realm, and any object it holds, answers 404 | `api/tests/it/realm_cross_realm_test.rs`, `api/tests/*_cross_realm_test.rs` |
 | Cross-realm access through nested objects (clients, roles, users, organizations, webhooks, themes, sessions) | One cross-realm suite per domain | `api/tests/*_cross_realm_test.rs` (15 suites) |
 | Permission checks drifting between endpoints | One authorization matrix (`AUTHZ_MATRIX`) in the `ferriskey-authz` crate | `libs/ferriskey-authz` |
-| Covering tracks after an admin action | Security events are hash-chained and the chain can be verified | `api/tests/seawatch_test.rs` |
-| Browser-based calls from an unknown origin | CORS allow-list from `ALLOWED_ORIGINS` and per-client web origins, no wildcard, empty by default | `api/tests/web_origin_test.rs` |
+| Covering tracks after an admin action | Security events are hash-chained and the chain can be verified | `api/tests/it/seawatch_test.rs` |
+| Browser-based calls from an unknown origin | CORS allow-list from `ALLOWED_ORIGINS` and per-client web origins, no wildcard, empty by default | `api/tests/it/web_origin_test.rs` |
 | SSRF through webhooks or client metadata documents | Outbound targets in private address ranges are refused by default | `libs/ferriskey-webhook` |
 | Forged webhook deliveries | Payloads signed with HMAC-SHA256 | `libs/ferriskey-webhook` |
 | SQL injection | Queries go through SeaORM and sqlx with bound parameters | `core/src/infrastructure` |

@@ -1,7 +1,7 @@
 /// Integration tests for login_aliases configuration via the realm settings API.
 ///
 /// Requires a running Postgres instance. Run with:
-///   cargo test -p ferriskey-api --test login_aliases_test -- --ignored
+///   cargo test -p ferriskey-api --test it login_aliases_test:: -- --include-ignored
 ///
 /// Environment variables (all optional, defaults shown):
 ///   DATABASE_HOST=localhost  DATABASE_PORT=5432

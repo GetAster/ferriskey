@@ -3,7 +3,7 @@
 /// This test requires a running PostgreSQL instance.  It is marked `#[ignore]`
 /// so it does not block regular `cargo test` runs.  Run it explicitly with:
 ///
-///   cargo test -p ferriskey-api --test portal_theme_test -- --ignored
+///   cargo test -p ferriskey-api --test it portal_theme_test:: -- --include-ignored
 ///
 /// All assertions are bundled into a single test because `axum-prometheus`
 /// installs a process-global metrics recorder, which prevents building more

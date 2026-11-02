@@ -22,7 +22,7 @@
 /// Requires a running PostgreSQL instance. Marked `#[ignore]` so it does not run in
 /// regular `cargo test`. Run explicitly with:
 ///
-///   cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored
+///   cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -849,7 +849,7 @@ mod tests {
     // ── FK-006: the attack, from the URL of the victim realm ────────────────────
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn create_organization_is_denied_across_realms() {
         // The most exploitable of the three unguarded paths: the object does not exist
         // yet, so the `org.realm_id != realm.id` check in `get_org_for_realm` cannot
@@ -886,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn list_organizations_is_denied_across_realms() {
         rt().block_on(async {
             let server = make_server();
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn list_user_organizations_is_denied_across_realms() {
         // The third unguarded path: the memberships of an arbitrary user of the victim
         // realm, read from the victim realm's own URL.
@@ -937,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn create_group_is_denied_across_realms() {
         // Groups hang off an organization that genuinely belongs to `tenant-b`, so
         // `get_org_for_realm` passes and the policy is again the only gate.
@@ -973,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn list_groups_is_denied_across_realms() {
         // The read counterpart: `ViewUsers` alone used to be enough to walk another
         // realm's group tree.
@@ -1005,7 +1005,7 @@ mod tests {
     // ── the other half of the fix: alice keeps her own realm ────────────────────
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn alice_still_administers_her_own_realm() {
         // Without this, a patch that simply denied everything would look like a success.
         // Same token, same endpoints, alice's own realm: everything must work.
@@ -1122,7 +1122,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn assigning_a_role_of_another_realm_to_a_member_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn assigning_a_role_of_another_realm_to_a_group_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1188,7 +1188,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn a_role_of_another_realm_never_reaches_a_token() {
         rt().block_on(async {
             let server = make_server();
@@ -1257,7 +1257,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn a_role_of_the_url_realm_is_still_attachable() {
         rt().block_on(async {
             let server = make_server();
@@ -1350,7 +1350,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn reading_a_group_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1376,7 +1376,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_group_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1402,7 +1402,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn a_group_of_another_organization_is_not_reachable_through_this_one() {
         rt().block_on(async {
             let server = make_server();
@@ -1431,7 +1431,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn reading_member_roles_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1460,7 +1460,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn assigning_a_member_role_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1496,7 +1496,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test organization_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it organization_cross_realm_test:: -- --include-ignored"]
     fn removing_a_group_member_who_is_not_one_is_refused() {
         rt().block_on(async {
             let server = make_server();

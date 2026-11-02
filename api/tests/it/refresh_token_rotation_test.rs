@@ -3,7 +3,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test refresh_token_rotation_test -- --ignored
+///   cargo test -p ferriskey-api --test it refresh_token_rotation_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost

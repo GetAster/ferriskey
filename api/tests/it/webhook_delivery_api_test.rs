@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_anonymous_caller_cannot_read_deliveries() {
         rt().block_on(async {
             let server = make_server();
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_fresh_webhook_has_an_empty_delivery_history() {
         rt().block_on(async {
             let server = make_server();
@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_page_size_above_the_cap_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_unknown_status_filter_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_unknown_delivery_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_delivery_cannot_be_read_through_another_webhook() {
         rt().block_on(async {
             let server = make_server();
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn replaying_a_pending_delivery_is_a_conflict() {
         rt().block_on(async {
             let server = make_server();
@@ -412,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn replaying_a_failed_delivery_is_accepted() {
         rt().block_on(async {
             let server = make_server();
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_delivery_response_never_discloses_the_webhook_secret() {
         rt().block_on(async {
             let server = make_server();
@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn retry_policy_resolution_walks_webhook_then_realm_then_system_default() {
         rt().block_on(async {
             let server = make_server();
@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_out_of_bounds_webhook_retry_policy_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -606,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_out_of_bounds_realm_retry_policy_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_webhook_can_be_created_without_any_subscriber() {
         rt().block_on(async {
             let server = make_server();
@@ -670,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn a_rejected_endpoint_says_why() {
         rt().block_on(async {
             let server = make_server();
@@ -717,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn rotating_returns_a_new_secret_once_and_replaces_the_stored_one() {
         rt().block_on(async {
             let server = make_server();
@@ -751,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn the_secret_is_returned_by_rotation_and_by_nothing_else() {
         rt().block_on(async {
             let server = make_server();
@@ -789,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn rotating_an_unknown_webhook_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -809,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhook_delivery_api_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhook_delivery_api_test:: -- --include-ignored"]
     fn an_anonymous_caller_cannot_rotate_a_secret() {
         rt().block_on(async {
             let server = make_server();

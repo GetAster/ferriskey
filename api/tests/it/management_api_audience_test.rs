@@ -1,6 +1,4 @@
-mod common;
-
-use common::{ClientSpec, SeededClient, TestApp, app, password_grant, rt};
+use crate::common::{ClientSpec, SeededClient, TestApp, app, password_grant, rt};
 use serde_json::Value;
 
 const PASSWORD: &str = "Str0ng!P@ssword#2024";
@@ -31,7 +29,7 @@ async fn client_registered_as(app: &TestApp, source: &str) -> SeededClient {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test management_api_audience_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it management_api_audience_test:: -- --include-ignored"]
 fn a_token_of_an_admin_registered_client_reaches_the_management_api() {
     let app = app();
     rt().block_on(async {
@@ -50,7 +48,7 @@ fn a_token_of_an_admin_registered_client_reaches_the_management_api() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test management_api_audience_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it management_api_audience_test:: -- --include-ignored"]
 fn a_token_of_a_client_that_registered_itself_cannot_reach_the_management_api() {
     let app = app();
     rt().block_on(async {
@@ -72,7 +70,7 @@ fn a_token_of_a_client_that_registered_itself_cannot_reach_the_management_api() 
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test management_api_audience_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it management_api_audience_test:: -- --include-ignored"]
 fn a_token_of_a_client_that_registered_itself_can_still_call_userinfo() {
     let app = app();
     rt().block_on(async {

@@ -751,7 +751,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn no_params_returns_the_first_twenty_newest_providers() {
         let server = make_server();
         rt().block_on(async {
@@ -787,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn every_sort_field_orders_both_ways_without_gaps_or_duplicates() {
         let server = make_server();
         rt().block_on(async {
@@ -818,7 +818,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn every_filter_returns_exactly_the_matching_providers() {
         let server = make_server();
         let cases: Vec<(&str, HashSet<Uuid>)> = vec![
@@ -886,7 +886,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn health_mirrors_the_console_inference_for_every_branch() {
         let server = make_server();
         rt().block_on(async {
@@ -938,7 +938,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn client_secrets_stay_masked_in_the_listing() {
         let server = make_server();
         rt().block_on(async {
@@ -972,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn providers_of_another_realm_are_never_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -994,7 +994,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn a_caller_without_rights_on_the_realm_lists_nothing() {
         let server = make_server();
         rt().block_on(async {
@@ -1011,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn a_caller_of_the_realm_without_provider_rights_is_forbidden() {
         let server = make_server();
         rt().block_on(async {
@@ -1035,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn like_wildcards_match_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -1065,7 +1065,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn invalid_query_parameters_are_rejected() {
         let server = make_server();
         rt().block_on(async {
@@ -1095,7 +1095,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn search_combines_alias_and_display_name() {
         let alias_only = matching(|s| s.alias.contains('2'));
         let display_only = matching(|s| display_name_contains(s, "2"));
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn search_never_matches_a_missing_display_name() {
         let missing: Vec<&Seed> = ctx()
             .seeds
@@ -1135,7 +1135,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn search_matches_wildcards_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn created_range_is_inclusive_from_and_exclusive_to() {
         let server = make_server();
         let cases: Vec<(String, HashSet<Uuid>)> = vec![
@@ -1219,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test identity_providers_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it identity_providers_listing_test:: -- --include-ignored"]
     fn an_inverted_created_range_is_an_empty_page() {
         let server = make_server();
         rt().block_on(async {

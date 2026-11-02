@@ -375,7 +375,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test auth_session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it auth_session_cross_realm_test:: -- --include-ignored"]
     fn a_session_opened_in_another_realm_cannot_be_authenticated() {
         rt().block_on(async {
             let server = make_server();
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test auth_session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it auth_session_cross_realm_test:: -- --include-ignored"]
     fn a_session_opened_in_the_realm_it_is_used_in_still_authenticates() {
         rt().block_on(async {
             let server = make_server();
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test auth_session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it auth_session_cross_realm_test:: -- --include-ignored"]
     fn a_code_bound_to_a_user_of_another_realm_is_refused_at_the_token_endpoint() {
         rt().block_on(async {
             let server = make_server();
@@ -581,7 +581,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test auth_session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it auth_session_cross_realm_test:: -- --include-ignored"]
     fn an_otp_challenge_completes_the_authorization_request_it_was_opened_for() {
         rt().block_on(async {
             let server = make_server();
@@ -619,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test auth_session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it auth_session_cross_realm_test:: -- --include-ignored"]
     fn an_otp_challenge_cannot_spend_an_authorization_request_of_another_realm() {
         rt().block_on(async {
             let server = make_server();

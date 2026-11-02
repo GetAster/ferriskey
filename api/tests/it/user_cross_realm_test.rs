@@ -23,7 +23,7 @@
 ///
 /// Requires a running PostgreSQL instance. Marked `#[ignore]`. Run with:
 ///
-///   cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored
+///   cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -597,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn reset_password_across_tenant_realms_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -649,7 +649,7 @@ mod tests {
 
     /// Disclosure: the tenant-a admin reads a tenant-b user's record.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn get_user_across_tenant_realms_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -676,7 +676,7 @@ mod tests {
 
     /// Destruction: the tenant-a admin deletes a tenant-b user.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn delete_user_across_tenant_realms_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -708,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn get_user_roles_across_tenant_realms_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -741,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn evaluate_scopes_across_tenant_realms_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -776,7 +776,7 @@ mod tests {
     /// The realm check must reject foreign ids without breaking the ordinary case:
     /// alice creates, reads, re-passwords and deletes a user of `tenant_a`.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_still_administers_users_of_its_own_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -840,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_still_reads_roles_and_previews_scopes_of_its_own_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -869,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_cross_realm_test:: -- --include-ignored"]
     fn bulk_delete_across_tenant_realms_leaves_the_victim_signed_in() {
         rt().block_on(async {
             let server = make_server();

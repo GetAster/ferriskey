@@ -3,7 +3,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test pkce_test -- --ignored
+///   cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -323,7 +323,7 @@ mod tests {
     ///   verifier  = dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
     ///   challenge = E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn pkce_s256_happy_path() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -393,7 +393,7 @@ mod tests {
 
     /// Wrong verifier → invalid_grant.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn pkce_s256_wrong_verifier_rejected() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -452,7 +452,7 @@ mod tests {
 
     /// require_pkce = true: missing code_challenge at /auth → invalid_request.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn pkce_required_client_rejects_auth_without_challenge() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -478,7 +478,7 @@ mod tests {
 
     /// require_pkce = true: plain method rejected.
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn pkce_required_client_rejects_plain_method() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -505,7 +505,7 @@ mod tests {
 
     /// require_pkce = true: omitted method rejected (would default to plain).
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn pkce_required_client_rejects_omitted_method() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -530,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn a_public_client_that_sends_a_challenge_must_name_s256() {
         rt().block_on(async {
             let ctx = shared_ctx();
@@ -566,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn a_new_client_requires_pkce_by_default() {
         rt().block_on(async {
             let server = make_server();
@@ -578,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test pkce_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it pkce_test:: -- --include-ignored"]
     fn a_new_client_can_opt_out_of_pkce() {
         rt().block_on(async {
             let server = make_server();

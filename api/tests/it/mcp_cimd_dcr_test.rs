@@ -1,7 +1,7 @@
 /// Integration tests for Client ID Metadata Documents and Dynamic Client Registration.
 ///
 ///   DATABASE_HOST=127.0.0.1 DATABASE_PORT=55434 \
-///     cargo test -p ferriskey-api --test mcp_cimd_dcr_test -- --ignored
+///     cargo test -p ferriskey-api --test it mcp_cimd_dcr_test:: -- --include-ignored
 #[cfg(test)]
 mod tests {
     use ferriskey_core::domain::common::PasswordHashingCost;

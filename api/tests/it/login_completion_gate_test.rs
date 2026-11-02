@@ -1,7 +1,7 @@
-mod common;
-
+use crate::common::{
+    ClientSpec, SeededClient, SeededUser, TestApp, app, authorize, query_param, rt,
+};
 use axum::http::HeaderValue;
-use common::{ClientSpec, SeededClient, SeededUser, TestApp, app, authorize, query_param, rt};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
 use sha1::Sha1;
@@ -118,7 +118,7 @@ async fn challenge_otp(
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test login_completion_gate_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it login_completion_gate_test:: -- --include-ignored"]
 fn an_otp_login_to_a_client_requiring_consent_goes_through_the_consent_screen() {
     let app = app();
     rt().block_on(async {
@@ -164,7 +164,7 @@ fn an_otp_login_to_a_client_requiring_consent_goes_through_the_consent_screen() 
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test login_completion_gate_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it login_completion_gate_test:: -- --include-ignored"]
 fn an_otp_login_to_a_client_put_in_maintenance_meanwhile_is_refused() {
     let app = app();
     rt().block_on(async {

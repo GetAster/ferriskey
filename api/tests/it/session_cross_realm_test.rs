@@ -588,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn listing_the_sessions_of_a_user_of_another_realm_leaks_nothing() {
         rt().block_on(async {
             let server = make_server();
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn revoking_the_session_of_a_user_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -672,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn revoking_a_session_through_another_realms_url_is_refused_in_both_directions() {
         rt().block_on(async {
             let server = make_server();
@@ -707,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn revoking_a_session_of_a_user_of_another_realm_under_its_own_realm_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn a_grant_never_mints_a_token_on_a_session_of_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -778,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn reading_a_compass_flow_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -811,7 +811,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_cross_realm_test:: -- --include-ignored"]
     fn listing_compass_flows_does_not_leak_another_realms_flow() {
         rt().block_on(async {
             let server = make_server();

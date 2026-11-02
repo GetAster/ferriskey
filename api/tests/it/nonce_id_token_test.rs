@@ -6,7 +6,7 @@
 /// Requires a running PostgreSQL instance. The test is marked `#[ignore]` so it
 /// does not run in regular `cargo test` (no local Postgres). Run explicitly with:
 ///
-///   cargo test -p ferriskey-api --test nonce_id_token_test -- --ignored
+///   cargo test -p ferriskey-api --test it nonce_id_token_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost

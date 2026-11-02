@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn a_registered_origin_may_exchange_a_code_at_the_token_endpoint() {
         rt().block_on(async {
             let server = make_server();
@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn an_origin_nobody_registered_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn an_origin_registered_in_one_realm_is_refused_on_another() {
         rt().block_on(async {
             let server = make_server();
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn the_sentinel_allows_the_origin_of_a_literal_redirect_uri() {
         rt().block_on(async {
             let server = make_server();
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn a_value_that_is_not_an_origin_is_rejected_on_write() {
         rt().block_on(async {
             let server = make_server();
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn the_wildcard_is_rejected_on_write() {
         rt().block_on(async {
             let server = make_server();
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn registering_the_same_origin_twice_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test web_origin_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it web_origin_test:: -- --include-ignored"]
     fn removing_an_origin_stops_the_preflight_immediately() {
         rt().block_on(async {
             let server = make_server();

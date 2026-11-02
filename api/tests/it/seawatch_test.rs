@@ -9,7 +9,7 @@
 /// Require a running PostgreSQL instance. Marked `#[ignore]` so they don't
 /// block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test seawatch_test -- --ignored
+///   cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn every_stored_event_is_linked_into_the_hash_chain() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn event_types_filter_is_actually_applied() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn limit_is_actually_applied() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -460,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn a_successful_login_records_login_success_alongside_session_created() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -503,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn a_wrong_password_is_recorded_as_a_login_failure() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn an_unknown_username_is_recorded_without_an_actor_and_without_the_identifier() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn a_disabled_account_is_recorded_as_a_login_failure() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -591,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn a_locked_account_is_recorded_as_a_login_failure() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test seawatch_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it seawatch_test:: -- --include-ignored"]
     fn a_failed_interactive_login_is_recorded_as_a_login_failure() {
         let srv = server();
         let realm = ctx().realm_name.clone();

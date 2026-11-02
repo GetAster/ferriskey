@@ -1,10 +1,8 @@
-mod common;
-
 use std::future::Future;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-use common::{
+use crate::common::{
     ADMIN_CLIENT_ID, ADMIN_PASSWORD, ADMIN_USERNAME, ClientSpec, TestApp, authorize, cached_app,
     client_credentials, exchange_code, password_grant, query_param, rt,
 };
@@ -178,7 +176,7 @@ fn assert_within(step: &str, budget: usize, statements: &[String]) {
 async fn browser_login(
     server: &axum_test::TestServer,
     app: &TestApp,
-    client: &common::SeededClient,
+    client: &crate::common::SeededClient,
     username: &str,
     password: &str,
 ) -> (Vec<String>, Vec<String>, Vec<String>) {
@@ -215,7 +213,7 @@ async fn browser_login(
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test login_statement_budget_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it login_statement_budget_test:: -- --include-ignored"]
 fn a_login_stays_within_its_statement_budget() {
     record_statements();
     let app = cached_app();

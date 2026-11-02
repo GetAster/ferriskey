@@ -1,6 +1,4 @@
-mod common;
-
-use common::{ClientSpec, SeededClient, TestApp, app, decode_unverified, rt};
+use crate::common::{ClientSpec, SeededClient, TestApp, app, decode_unverified, rt};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -42,7 +40,7 @@ async fn stored_tokens(app: &TestApp, table: &str, user_id: Uuid) -> i64 {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test client_credentials_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it client_credentials_test:: -- --include-ignored"]
 fn a_client_credentials_grant_issues_no_refresh_token() {
     let app = app();
     rt().block_on(async {
@@ -73,7 +71,7 @@ fn a_client_credentials_grant_issues_no_refresh_token() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test client_credentials_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it client_credentials_test:: -- --include-ignored"]
 fn an_id_token_comes_only_with_the_openid_scope() {
     let app = app();
     rt().block_on(async {

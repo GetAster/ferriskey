@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn revoking_a_session_kills_the_tokens_it_minted() {
         rt().block_on(async {
             let server = make_server();
@@ -527,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn revoking_a_session_marks_its_token_inactive_on_introspection() {
         rt().block_on(async {
             let server = make_server();
@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn disabling_an_account_kills_its_outstanding_tokens() {
         rt().block_on(async {
             let server = make_server();
@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn changing_the_password_kills_sessions_opened_with_the_old_one() {
         rt().block_on(async {
             let server = make_server();
@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn a_revoked_session_can_no_longer_be_rotated_into_a_fresh_token_pair() {
         rt().block_on(async {
             let server = make_server();
@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn an_untouched_session_keeps_working_and_still_refreshes() {
         rt().block_on(async {
             let server = make_server();
@@ -756,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn logging_out_kills_the_tokens_of_the_session_it_ends() {
         rt().block_on(async {
             let server = make_server();
@@ -799,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn revoking_one_session_leaves_the_users_other_sessions_alone() {
         rt().block_on(async {
             let server = make_server();
@@ -879,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_revocation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_revocation_test:: -- --include-ignored"]
     fn client_credentials_tokens_carry_no_session_and_keep_working() {
         rt().block_on(async {
             let server = make_server();

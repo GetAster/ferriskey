@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn reading_a_client_scope_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -756,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn updating_a_client_scope_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -798,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_client_scope_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn grafting_a_protocol_mapper_onto_a_scope_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -880,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn updating_a_protocol_mapper_through_a_scope_that_does_not_own_it_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -942,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_protocol_mapper_through_a_scope_that_does_not_own_it_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1008,7 +1008,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn attaching_a_client_scope_of_another_realm_to_a_local_client_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1072,7 +1072,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn detaching_a_client_scope_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1125,7 +1125,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn listing_the_client_scopes_of_a_client_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1158,7 +1158,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test scope_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it scope_cross_realm_test:: -- --include-ignored"]
     fn a_scope_of_another_realm_mapped_onto_a_local_client_does_not_reach_the_token() {
         rt().block_on(async {
             let server = make_server();

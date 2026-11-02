@@ -889,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn requesting_webauthn_options_through_another_realms_url_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;
@@ -934,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn burning_a_recovery_code_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1015,7 +1015,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn an_access_token_cannot_burn_a_recovery_code() {
         rt().block_on(async {
             let server = make_server();
@@ -1052,7 +1052,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn a_recovery_code_does_not_answer_a_login_without_an_otp_challenge() {
         rt().block_on(async {
             let server = make_server();
@@ -1080,7 +1080,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn a_step_token_cannot_burn_a_recovery_code_into_another_login_session() {
         rt().block_on(async {
             let server = make_server();
@@ -1116,7 +1116,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn generating_recovery_codes_requires_an_elevation() {
         rt().block_on(async {
             let server = make_server();
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn authenticating_webauthn_against_another_realms_session_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;
@@ -1180,7 +1180,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn authenticating_a_passkey_against_another_realms_session_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;
@@ -1224,7 +1224,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn updating_a_password_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1275,7 +1275,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn planting_a_webauthn_challenge_on_another_realms_session_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;
@@ -1310,7 +1310,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn planting_a_passkey_challenge_on_another_realms_session_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;
@@ -1364,7 +1364,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test trident_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it trident_cross_realm_test:: -- --include-ignored"]
     fn planting_an_enrolment_challenge_on_another_realms_session_is_refused() {
         rt().block_on(async {
             grant_passkey_to_admin().await;

@@ -29,7 +29,7 @@
 /// Requires a running PostgreSQL instance. Marked `#[ignore]` so it does not run in
 /// regular `cargo test`. Run explicitly with:
 ///
-///   cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored
+///   cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn reading_a_client_never_yields_its_plaintext_secret() {
         rt().block_on(async {
             let server = make_server();
@@ -614,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_read_another_tenants_client_secret() {
         // The headline exploit. `Client.secret` is unhashed and serialized in the
         // clear, so a successful read hands the attacker credentials replayable on
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_weaken_another_tenants_client() {
         // Turning `require_pkce` off on someone else's confidential client removes
         // the defence that makes a stolen authorization code useless.
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_delete_another_tenants_client() {
         // The delete cascades onto roles, the service account, scope mappings and
         // post-logout redirect URIs — deleting a realm's console client takes its
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_inject_a_redirect_uri_into_another_tenants_client() {
         // Registering a redirect URI on a victim client is the delivery half of an
         // authorization-code hijack.
@@ -776,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_reveal_another_tenants_client_secret() {
         rt().block_on(async {
             let server = make_server();
@@ -830,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_read_another_tenants_saml_config() {
         rt().block_on(async {
             let server = make_server();
@@ -864,7 +864,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_cannot_rewrite_another_tenants_saml_config() {
         rt().block_on(async {
             let server = make_server();
@@ -909,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test client_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it client_cross_realm_test:: -- --include-ignored"]
     fn tenant_admin_retains_full_control_of_their_own_clients() {
         // Non-regression. Without this, a fix that simply denied every client
         // operation would look like a success above.

@@ -1,7 +1,7 @@
 /// Integration tests for the AuthZEN 1.0 evaluation endpoint.
 ///
 ///   DATABASE_HOST=127.0.0.1 DATABASE_PORT=5432 \
-///     cargo test -p ferriskey-api --test authzen_test -- --ignored
+///     cargo test -p ferriskey-api --test it authzen_test:: -- --include-ignored
 #[cfg(test)]
 mod tests {
     use ferriskey_core::domain::common::PasswordHashingCost;

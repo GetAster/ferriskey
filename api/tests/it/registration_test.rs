@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test registration_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it registration_test:: -- --include-ignored"]
     fn a_self_registered_account_is_never_marked_verified() {
         let server = make_server();
         let admin = rt().block_on(get_admin_token(&server));
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test registration_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it registration_test:: -- --include-ignored"]
     fn a_registration_body_without_credentials_is_refused() {
         let server = make_server();
         let admin = rt().block_on(get_admin_token(&server));
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test registration_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it registration_test:: -- --include-ignored"]
     fn an_address_differing_only_by_case_cannot_be_registered_twice() {
         let server = make_server();
         let admin = rt().block_on(get_admin_token(&server));

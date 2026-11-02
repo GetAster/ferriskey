@@ -3,7 +3,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test device_flow_test -- --ignored
+///   cargo test -p ferriskey-api --test it device_flow_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost

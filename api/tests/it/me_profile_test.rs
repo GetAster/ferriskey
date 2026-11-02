@@ -8,7 +8,7 @@
 /// Require a running PostgreSQL instance. Marked `#[ignore]` so they don't
 /// block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test me_profile_test -- --ignored
+///   cargo test -p ferriskey-api --test it me_profile_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test me_profile_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it me_profile_test:: -- --include-ignored"]
     fn get_me_returns_the_caller_own_profile() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test me_profile_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it me_profile_test:: -- --include-ignored"]
     fn put_me_updates_firstname_lastname_and_email() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -337,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test me_profile_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it me_profile_test:: -- --include-ignored"]
     fn username_edit_is_refused_unless_the_realm_allows_it() {
         let srv = server();
         let realm = ctx().realm_name.clone();

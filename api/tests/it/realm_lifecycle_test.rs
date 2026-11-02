@@ -4,7 +4,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test realm_lifecycle_test -- --ignored
+///   cargo test -p ferriskey-api --test it realm_lifecycle_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_lifecycle_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_lifecycle_test:: -- --include-ignored"]
     fn creating_a_realm_whose_name_is_taken_answers_409() {
         let srv = server();
         let master = ctx().master_realm.clone();

@@ -15,7 +15,7 @@
 /// Require a running PostgreSQL instance. Marked `#[ignore]` so they don't
 /// block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test account_security_test -- --ignored
+///   cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -440,7 +440,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn changing_the_password_without_an_elevation_is_refused() {
         let srv = server();
         let realm = realm();
@@ -478,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn an_elevation_minted_for_one_account_does_not_unlock_another() {
         let srv = server();
         let realm = realm();
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn an_elevation_minted_in_one_session_does_not_unlock_another_session_of_the_same_user() {
         let srv = server();
         let realm = realm();
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn a_reauthentication_with_the_wrong_password_mints_no_elevation() {
         let srv = server();
         let realm = realm();
@@ -610,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn an_elevation_request_must_carry_exactly_one_proof() {
         let srv = server();
         let realm = realm();
@@ -651,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn a_reauthentication_then_a_password_change_rotates_the_credential() {
         let srv = server();
         let realm = realm();
@@ -707,7 +707,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn a_password_change_leaves_the_caller_own_session_signed_in() {
         let srv = server();
         let realm = realm();
@@ -744,7 +744,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn listing_own_credentials_never_returns_secret_material() {
         let srv = server();
         let realm = realm();
@@ -842,7 +842,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn an_access_token_carrying_no_session_cannot_reach_the_account_surface() {
         let srv = server();
         let realm = realm();
@@ -874,7 +874,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn every_credential_management_route_refuses_a_request_without_an_elevation() {
         let srv = server();
         let realm = realm();
@@ -953,7 +953,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test account_security_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it account_security_test:: -- --include-ignored"]
     fn confirming_a_passkey_without_a_live_challenge_is_refused() {
         let srv = server();
         let realm = realm();

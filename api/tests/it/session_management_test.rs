@@ -3,7 +3,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test session_management_test -- --ignored
+///   cargo test -p ferriskey-api --test it session_management_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_management_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_management_test:: -- --include-ignored"]
     fn admin_can_list_own_sessions() {
         // Build the server + resolve the realm synchronously (initialising the
         // shared context here, before entering `block_on`, avoids a nested
@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_management_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_management_test:: -- --include-ignored"]
     fn admin_can_revoke_own_session() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_management_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_management_test:: -- --include-ignored"]
     fn unauthenticated_request_returns_401() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test session_management_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it session_management_test:: -- --include-ignored"]
     fn revoke_nonexistent_session_returns_404() {
         let srv = server();
         let realm = ctx().realm_name.clone();

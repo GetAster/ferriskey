@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn an_authn_request_for_a_service_provider_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -755,7 +755,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn an_authorization_code_cannot_be_redeemed_at_another_realms_continue_endpoint() {
         rt().block_on(async {
             let server = make_server();
@@ -786,7 +786,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn an_assertion_is_signed_by_its_own_realm_and_by_no_other() {
         rt().block_on(async {
             let server = make_server();
@@ -826,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn a_service_provider_configuration_that_claims_another_realm_yields_no_assertion() {
         rt().block_on(async {
             let server = make_server();
@@ -875,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn an_assertion_carries_only_the_attribute_mappers_of_its_own_client() {
         rt().block_on(async {
             let server = make_server();
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn creating_a_saml_attribute_mapper_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -958,7 +958,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn listing_another_realms_saml_attribute_mappers_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -992,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_cross_realm_test:: -- --include-ignored"]
     fn deleting_another_realms_saml_attribute_mapper_is_refused() {
         rt().block_on(async {
             let server = make_server();

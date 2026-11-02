@@ -2,7 +2,7 @@
 /// and the `token_endpoint_auth_methods_supported` field in the OIDC discovery document.
 ///
 /// Run with:
-///   cargo test -p ferriskey-api -- --ignored
+///   cargo test -p ferriskey-api --test it token_basic_auth:: -- --include-ignored
 #[cfg(test)]
 mod tests {
     use ferriskey_core::domain::common::PasswordHashingCost;

@@ -1,5 +1,3 @@
-mod common;
-
 #[cfg(test)]
 mod tests {
     use std::sync::{Mutex, MutexGuard};

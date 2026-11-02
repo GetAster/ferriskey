@@ -1,10 +1,8 @@
-mod common;
-
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use common::{ClientSpec, cached_app, client_credentials, rt};
+use crate::common::{ClientSpec, cached_app, client_credentials, rt};
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
 use tracing_subscriber::Layer;
@@ -194,7 +192,7 @@ fn report(mut wall: Vec<Duration>) {
 }
 
 #[test]
-#[ignore = "measurement, requires PostgreSQL — run: cargo test -p ferriskey-api --test client_credentials_profile_test -- --ignored --nocapture"]
+#[ignore = "measurement, requires PostgreSQL — run: cargo test -p ferriskey-api --test it client_credentials_profile_test:: -- --include-ignored --nocapture"]
 fn where_the_time_of_a_client_credentials_grant_goes() {
     PROFILER.get_or_init(|| {
         tracing_subscriber::registry().with(Profiler).init();

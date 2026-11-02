@@ -1,6 +1,4 @@
-mod common;
-
-use common::{ClientSpec, TestApp, app, decode_unverified, rt};
+use crate::common::{ClientSpec, TestApp, app, decode_unverified, rt};
 use serde_json::{Value, json};
 
 const ALLOWED: &str = "https://api.example";
@@ -27,7 +25,7 @@ fn audience(body: &Value) -> Value {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_resource_direct_grants_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_resource_direct_grants_test:: -- --include-ignored"]
 fn the_client_credentials_grant_honours_the_resource_parameter() {
     let app = app();
     rt().block_on(async {
@@ -59,7 +57,7 @@ fn the_client_credentials_grant_honours_the_resource_parameter() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_resource_direct_grants_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_resource_direct_grants_test:: -- --include-ignored"]
 fn the_password_grant_honours_the_resource_parameter() {
     let app = app();
     rt().block_on(async {

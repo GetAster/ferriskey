@@ -1,8 +1,6 @@
-mod common;
-
 use std::time::{Duration, Instant};
 
-use common::{ClientSpec, SeededClient, TestApp, forwarded_app, rt};
+use crate::common::{ClientSpec, SeededClient, TestApp, forwarded_app, rt};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -83,7 +81,7 @@ fn assert_throttled(response: &axum_test::TestResponse) {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn failed_client_authentications_write_no_flow_and_are_throttled_per_address() {
     let app = forwarded_app();
     rt().block_on(async {
@@ -135,7 +133,7 @@ fn failed_client_authentications_write_no_flow_and_are_throttled_per_address() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn successful_requests_are_never_throttled() {
     let app = forwarded_app();
     rt().block_on(async {
@@ -156,7 +154,7 @@ fn successful_requests_are_never_throttled() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn device_code_polls_with_a_wrong_secret_count_as_failures() {
     let app = forwarded_app();
     rt().block_on(async {
@@ -191,7 +189,7 @@ fn device_code_polls_with_a_wrong_secret_count_as_failures() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn failures_against_one_client_do_not_throttle_another_client_behind_the_same_address() {
     let app = forwarded_app();
     rt().block_on(async {
@@ -213,7 +211,7 @@ fn failures_against_one_client_do_not_throttle_another_client_behind_the_same_ad
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn failures_against_unknown_clients_are_never_tracked_on_any_grant() {
     let app = forwarded_app();
     rt().block_on(async {
@@ -287,7 +285,7 @@ fn failures_against_unknown_clients_are_never_tracked_on_any_grant() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test token_endpoint_throttle_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it token_endpoint_throttle_test:: -- --include-ignored"]
 fn concurrent_successful_requests_are_never_throttled() {
     let app = forwarded_app();
     rt().block_on(async {

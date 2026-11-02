@@ -1,3 +1,4 @@
+#[path = "it/common/mod.rs"]
 mod common;
 
 use std::{collections::HashMap, fmt};

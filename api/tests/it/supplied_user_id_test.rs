@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test supplied_user_id_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it supplied_user_id_test:: -- --include-ignored"]
     fn an_omitted_id_is_still_minted_server_side() {
         let server = make_server();
         rt().block_on(async {
@@ -280,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test supplied_user_id_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it supplied_user_id_test:: -- --include-ignored"]
     fn a_supplied_id_is_written_verbatim() {
         let server = make_server();
         rt().block_on(async {
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test supplied_user_id_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it supplied_user_id_test:: -- --include-ignored"]
     fn a_supplied_id_becomes_the_token_subject() {
         let server = make_server();
         rt().block_on(async {
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test supplied_user_id_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it supplied_user_id_test:: -- --include-ignored"]
     fn an_id_taken_in_another_realm_answers_409() {
         let server = make_server();
         rt().block_on(async {
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test supplied_user_id_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it supplied_user_id_test:: -- --include-ignored"]
     fn an_unknown_field_is_refused() {
         let server = make_server();
         rt().block_on(async {

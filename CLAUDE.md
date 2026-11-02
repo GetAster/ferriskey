@@ -30,8 +30,10 @@ cargo test
 cargo test -p ferriskey-core
 cargo test -p ferriskey-api
 
-# Run integration tests (requires test database)
-cargo test --test it
+# Run integration tests (requires test database). Each area is a module of
+# api/tests/it/main.rs; filter by module name. sh/rust-tests.sh (CI) runs one
+# process per module so each keeps its own Postgres schema.
+cargo test -p ferriskey-api --test it <area>:: -- --include-ignored
 
 # Check code (faster than build)
 cargo check

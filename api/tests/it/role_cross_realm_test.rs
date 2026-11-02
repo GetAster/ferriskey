@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test role_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it role_cross_realm_test:: -- --include-ignored"]
     fn getting_a_role_from_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test role_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it role_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_role_from_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test role_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it role_cross_realm_test:: -- --include-ignored"]
     fn updating_a_role_from_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();
@@ -276,7 +276,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test role_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it role_cross_realm_test:: -- --include-ignored"]
     fn repermissioning_a_role_from_another_realm_is_not_found() {
         rt().block_on(async {
             let server = make_server();

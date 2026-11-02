@@ -12,7 +12,7 @@
 /// Requires a running PostgreSQL instance. Marked `#[ignore]` so it does not run in
 /// regular `cargo test`. Run explicitly with:
 ///
-///   cargo test -p ferriskey-api --test redirect_uri_validation_test -- --ignored
+///   cargo test -p ferriskey-api --test it redirect_uri_validation_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test redirect_uri_validation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it redirect_uri_validation_test:: -- --include-ignored"]
     fn seeded_console_rejects_an_attacker_supplied_redirect_uri() {
         // FK-002: this is the whole exploit. A default installation seeded `^/*` on
         // the console client, so this request used to be accepted and the resulting
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test redirect_uri_validation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it redirect_uri_validation_test:: -- --include-ignored"]
     fn seeded_console_accepts_its_own_callback() {
         // The other half of the fix: removing the catch-all must not lock the
         // administrator out of the console.
@@ -296,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test redirect_uri_validation_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it redirect_uri_validation_test:: -- --include-ignored"]
     fn registered_uri_does_not_accept_a_uri_that_merely_contains_it() {
         // The substring defect applied to every client, independently of the seed:
         // `is_match` is a search, not a full match.

@@ -1,6 +1,6 @@
-mod common;
-
-use common::{ADMIN_CLIENT_ID, ClientSpec, TestApp, authorize, password_grant, rt, sealed_app};
+use crate::common::{
+    ADMIN_CLIENT_ID, ClientSpec, TestApp, authorize, password_grant, rt, sealed_app,
+};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
 use sha1::Sha1;
@@ -53,7 +53,7 @@ async fn stored(app: &TestApp, sql: &str, id: Uuid) -> String {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test sealed_secrets_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it sealed_secrets_test:: -- --include-ignored"]
 fn the_signing_key_of_a_realm_is_sealed_and_its_tokens_still_verify() {
     let app = sealed_app();
     rt().block_on(async {
@@ -78,7 +78,7 @@ fn the_signing_key_of_a_realm_is_sealed_and_its_tokens_still_verify() {
 }
 
 #[test]
-#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test sealed_secrets_test -- --ignored"]
+#[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it sealed_secrets_test:: -- --include-ignored"]
 fn an_enrolled_totp_seed_is_sealed_and_still_accepted_at_login() {
     let app = sealed_app();
     rt().block_on(async {

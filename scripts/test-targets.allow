@@ -1,0 +1,9 @@
+# package kind max
+
+# oidc_bdd is a cucumber BDD runner with `harness = false` whose main exits
+# the process; it cannot be a module of tests/it.
+ferriskey-api test 2
+
+# Pre-existing bench crates (counts may only fall).
+ferriskey-authz-cedar bench 1
+ferriskey-benchmarks bench 5

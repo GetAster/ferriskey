@@ -659,7 +659,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn no_params_returns_the_first_twenty_newest_sessions() {
         let server = make_server();
         rt().block_on(async {
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn every_sort_field_orders_both_ways_without_gaps_or_duplicates() {
         let server = make_server();
         rt().block_on(async {
@@ -728,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn never_seen_sessions_sort_last_ascending_and_first_descending() {
         let server = make_server();
         rt().block_on(async {
@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn every_filter_returns_exactly_the_matching_sessions() {
         let server = make_server();
         let cases: Vec<(&str, HashSet<Uuid>)> = vec![
@@ -819,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn search_matches_the_ip_address_or_the_user_agent() {
         let server = make_server();
         let cases: [(&str, &str, HashSet<Uuid>); 3] = [
@@ -862,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn search_matches_like_wildcards_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -883,7 +883,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn created_range_is_inclusive_from_and_exclusive_to() {
         let server = make_server();
         let cases: [(&str, HashSet<Uuid>); 6] = [
@@ -936,7 +936,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn expired_sessions_stay_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -960,7 +960,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn the_sso_token_hash_is_never_serialized() {
         let server = make_server();
         rt().block_on(async {
@@ -996,7 +996,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn sessions_of_other_users_and_realms_are_never_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -1075,7 +1075,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn callers_without_rights_list_nothing() {
         let server = make_server();
         rt().block_on(async {
@@ -1124,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn a_user_lists_its_own_sessions_without_any_permission() {
         let server = make_server();
         rt().block_on(async {
@@ -1181,7 +1181,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn like_wildcards_match_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -1217,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test user_sessions_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it user_sessions_listing_test:: -- --include-ignored"]
     fn invalid_query_parameters_are_rejected() {
         let server = make_server();
         rt().block_on(async {

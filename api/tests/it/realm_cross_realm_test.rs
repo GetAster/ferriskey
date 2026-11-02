@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_tenant_administrator_reads_her_own_realm_settings_but_not_another_tenants() {
         rt().block_on(async {
             let server = make_server();
@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_tenant_administrator_cannot_change_another_tenants_realm_settings() {
         rt().block_on(async {
             let server = make_server();
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_tenant_administrator_cannot_reach_another_tenants_smtp_configuration() {
         rt().block_on(async {
             let server = make_server();
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_tenant_administrator_cannot_read_or_rename_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -737,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_tenant_administrator_cannot_delete_another_realm() {
         rt().block_on(async {
             let server = make_server();
@@ -791,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn login_settings_are_public_per_realm_and_an_unknown_realm_is_refused_with_404() {
         rt().block_on(async {
             let server = make_server();
@@ -822,7 +822,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn a_missing_right_at_home_stays_forbidden_while_a_foreign_realm_reads_as_absent() {
         rt().block_on(async {
             let server = make_server();
@@ -892,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test realm_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it realm_cross_realm_test:: -- --include-ignored"]
     fn the_master_administrators_realm_listing_names_every_tenant() {
         rt().block_on(async {
             let server = make_server();

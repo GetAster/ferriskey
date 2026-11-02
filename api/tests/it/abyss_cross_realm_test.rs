@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn reading_an_identity_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -649,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn updating_an_identity_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn deleting_an_identity_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -770,7 +770,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn an_identity_provider_sharing_an_alias_with_another_realm_is_untouched() {
         rt().block_on(async {
             let server = make_server();
@@ -855,7 +855,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn reading_a_federation_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -893,7 +893,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn updating_a_federation_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -962,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_federation_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1022,7 +1022,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn operating_a_federation_provider_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -1088,7 +1088,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn a_broker_state_issued_in_one_realm_is_not_consumable_from_another() {
         rt().block_on(async {
             let server = make_server();
@@ -1142,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn a_foreign_callback_does_not_destroy_the_broker_session_it_cannot_read() {
         rt().block_on(async {
             let server = make_server();
@@ -1190,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test abyss_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it abyss_cross_realm_test:: -- --include-ignored"]
     fn a_broker_login_names_an_identity_provider_of_the_url_realm_only() {
         rt().block_on(async {
             let server = make_server();

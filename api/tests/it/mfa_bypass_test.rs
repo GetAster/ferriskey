@@ -19,7 +19,7 @@
 ///
 /// Requires a running PostgreSQL instance. Marked `#[ignore]`. Run with:
 ///
-///   cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored
+///   cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -262,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored"]
     fn a_failed_step_does_not_burn_the_token() {
         rt().block_on(async {
             grant_otp_credential_to_admin().await;
@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored"]
     fn the_step_token_is_confined_to_an_http_only_cookie() {
         rt().block_on(async {
             grant_otp_credential_to_admin().await;
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored"]
     fn a_login_action_no_longer_accepts_a_bearer_header() {
         rt().block_on(async {
             grant_otp_credential_to_admin().await;
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored"]
     fn temporary_step_token_cannot_be_replayed_to_complete_login() {
         rt().block_on(async {
             grant_otp_credential_to_admin().await;
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test mfa_bypass_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it mfa_bypass_test:: -- --include-ignored"]
     fn verify_otp_refuses_to_enrol_without_a_pending_server_side_enrollment() {
         rt().block_on(async {
             grant_otp_credential_to_admin().await;

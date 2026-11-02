@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn reading_the_security_journal_of_another_realm_leaks_nothing() {
         rt().block_on(async {
             let server = make_server();
@@ -655,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn reading_a_webhook_delivery_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -699,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn replaying_a_webhook_delivery_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn reading_an_email_template_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -776,7 +776,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn updating_an_email_template_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn reading_a_portal_theme_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -845,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn updating_a_portal_theme_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -875,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test observability_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it observability_cross_realm_test:: -- --include-ignored"]
     fn binding_a_portal_theme_to_a_layout_of_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();

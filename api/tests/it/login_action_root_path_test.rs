@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test login_action_root_path_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it login_action_root_path_test:: -- --include-ignored"]
     fn the_login_action_cookie_is_scoped_under_the_root_path() {
         rt().block_on(async {
             let server = server();
@@ -280,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test login_action_root_path_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it login_action_root_path_test:: -- --include-ignored"]
     fn a_temporary_password_can_be_updated_behind_a_root_path() {
         rt().block_on(async {
             let server = server();

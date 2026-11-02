@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test password_import_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it password_import_test:: -- --include-ignored"]
     fn an_imported_bcrypt_password_logs_in_and_is_rehashed_to_argon2id() {
         let server = make_server();
         rt().block_on(async {
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test password_import_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it password_import_test:: -- --include-ignored"]
     fn importing_over_an_existing_password_is_a_conflict() {
         let server = make_server();
         rt().block_on(async {
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test password_import_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it password_import_test:: -- --include-ignored"]
     fn a_malformed_hash_is_rejected_without_creating_a_credential() {
         let server = make_server();
         rt().block_on(async {
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test password_import_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it password_import_test:: -- --include-ignored"]
     fn importing_requires_an_authenticated_admin() {
         let server = make_server();
         rt().block_on(async {

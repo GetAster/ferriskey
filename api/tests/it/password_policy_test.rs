@@ -1,7 +1,7 @@
 /// Integration tests for per-realm password policy enforcement.
 ///
 /// Requires a running Postgres instance. Run with:
-///   cargo test -p ferriskey-api --test password_policy_test -- --ignored
+///   cargo test -p ferriskey-api --test it password_policy_test:: -- --include-ignored
 ///
 /// Environment variables (all optional, defaults shown):
 ///   DATABASE_HOST=localhost  DATABASE_PORT=5432

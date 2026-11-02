@@ -25,6 +25,12 @@ repos:
         files: ^(.*)\.rs|Cargo\.(toml|lock)$
         exclude: ^client/
         pass_filenames: false
+      - id: check-test-targets
+        name: check-test-targets
+        entry: python3 scripts/check-test-targets.py
+        language: system
+        files: ^(.*/)?Cargo\.toml$|^.*/tests/.*|^.*/benches/.*|^.*/examples/.*
+        pass_filenames: false
       - id: esint
         name: eslint
         entry: bash -c "cd front && npm run lint"

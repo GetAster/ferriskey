@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn rp_initiated_logout_sends_a_signed_logout_token() {
         rt().block_on(async {
             let server = make_server();
@@ -450,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn an_admin_revoking_a_session_notifies_its_clients() {
         rt().block_on(async {
             let server = make_server();
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn disabling_a_user_notifies_the_clients_of_every_session() {
         rt().block_on(async {
             let server = make_server();
@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn only_clients_of_the_session_with_an_endpoint_are_notified() {
         rt().block_on(async {
             let server = make_server();
@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn the_endpoint_is_validated_stored_and_cleared() {
         rt().block_on(async {
             let server = make_server();
@@ -600,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn discovery_advertises_back_channel_logout() {
         rt().block_on(async {
             let server = make_server();
@@ -614,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn deleting_a_user_notifies_its_clients() {
         rt().block_on(async {
             let server = make_server();
@@ -642,7 +642,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test backchannel_logout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it backchannel_logout_test:: -- --include-ignored"]
     fn bulk_deleting_users_notifies_their_clients() {
         rt().block_on(async {
             let server = make_server();

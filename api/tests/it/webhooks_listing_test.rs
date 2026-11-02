@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn no_params_returns_the_first_twenty_newest_webhooks() {
         let server = make_server();
         rt().block_on(async {
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn every_sort_field_orders_both_ways_without_gaps_or_duplicates() {
         let server = make_server();
         rt().block_on(async {
@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn nullable_sort_columns_put_nulls_last_ascending_and_first_descending() {
         let server = make_server();
         rt().block_on(async {
@@ -641,7 +641,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn every_filter_returns_exactly_the_matching_webhooks() {
         let server = make_server();
         let cases: Vec<(&str, HashSet<Uuid>)> = vec![
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn listed_webhooks_carry_their_subscribers() {
         let server = make_server();
         rt().block_on(async {
@@ -729,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn listed_webhooks_never_disclose_their_secret_or_headers() {
         let server = make_server();
         rt().block_on(async {
@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn webhooks_of_another_realm_are_never_listed() {
         let server = make_server();
         rt().block_on(async {
@@ -787,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn a_caller_without_rights_on_the_realm_lists_nothing() {
         let server = make_server();
         rt().block_on(async {
@@ -805,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn like_wildcards_match_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -839,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn search_matches_the_name_or_the_endpoint() {
         let server = make_server();
         let cases: [(&str, HashSet<Uuid>); 5] = [
@@ -882,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn search_matches_wildcards_literally() {
         let server = make_server();
         rt().block_on(async {
@@ -899,7 +899,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn created_range_is_inclusive_from_and_exclusive_to() {
         let server = make_server();
         let cases: [(&str, HashSet<Uuid>); 6] = [
@@ -961,7 +961,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn an_inverted_created_range_is_an_empty_page() {
         let server = make_server();
         rt().block_on(async {
@@ -977,7 +977,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webhooks_listing_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webhooks_listing_test:: -- --include-ignored"]
     fn invalid_query_parameters_are_rejected() {
         let server = make_server();
         rt().block_on(async {

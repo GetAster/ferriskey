@@ -387,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn an_admin_creates_a_policy_and_lists_it() {
         rt().block_on(async {
             let server = make_server();
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn a_second_policy_for_the_same_audience_is_a_conflict() {
         rt().block_on(async {
             let server = make_server();
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn an_audience_that_is_not_a_client_of_the_realm_is_rejected() {
         rt().block_on(async {
             let server = make_server();
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn a_deleted_policy_disappears_from_the_list() {
         rt().block_on(async {
             let server = make_server();
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn a_user_without_client_permissions_is_forbidden() {
         rt().block_on(async {
             let server = make_server();
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_policy_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it token_exchange_policy_test:: -- --include-ignored"]
     fn a_policy_of_another_realm_cannot_be_deleted() {
         rt().block_on(async {
             let server = make_server();

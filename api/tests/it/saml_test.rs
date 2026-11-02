@@ -10,7 +10,7 @@
 /// `#[ignore]` so they don't block regular `cargo test` runs. Run them
 /// explicitly with:
 ///
-///   cargo test -p ferriskey-api --test saml_test -- --ignored
+///   cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -399,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn descriptor_publishes_the_realm_metadata() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -427,7 +427,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn sso_over_http_redirect_binding_produces_a_verifiable_assertion() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -474,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn sso_over_http_post_binding_produces_a_verifiable_assertion() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -521,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn an_unregistered_service_provider_is_refused() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn a_mismatched_acs_url_is_refused() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn a_replayed_authorization_code_is_refused() {
         let srv = server();
         let realm = ctx().realm_name.clone();
@@ -606,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test saml_test -- --ignored"]
+    #[ignore = "requires PostgreSQL and xmlsec1 — run with: cargo test -p ferriskey-api --test it saml_test:: -- --include-ignored"]
     fn an_oidc_client_cannot_be_given_a_saml_configuration() {
         let srv = server();
         let realm = ctx().realm_name.clone();

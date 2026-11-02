@@ -400,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn listing_credentials_of_a_user_in_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -439,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn listing_credentials_of_an_unknown_user_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -454,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_credential_of_a_user_in_another_realm_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_neighbour_credential_addressed_under_a_local_user_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -527,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn deleting_a_local_credential_addressed_under_another_local_user_is_refused() {
         rt().block_on(async {
             let server = make_server();
@@ -564,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test credential_cross_realm_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it credential_cross_realm_test:: -- --include-ignored"]
     fn generating_recovery_codes_through_another_realms_url_is_refused() {
         rt().block_on(async {
             let server = make_server();

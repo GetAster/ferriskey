@@ -3,7 +3,7 @@
 /// These tests require a running PostgreSQL instance. They are marked `#[ignore]`
 /// so they do not block regular `cargo test` runs. Run them explicitly with:
 ///
-///   cargo test -p ferriskey-api --test account_lockout_test -- --ignored
+///   cargo test -p ferriskey-api --test it account_lockout_test:: -- --include-ignored
 ///
 /// Environment variables (defaults shown):
 ///   DATABASE_HOST     = localhost
@@ -319,7 +319,7 @@ mod tests {
     /// N-1 wrong-password attempts do not lock the account: the correct
     /// password still authenticates.
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test account_lockout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it account_lockout_test:: -- --include-ignored"]
     fn below_threshold_does_not_lock() {
         let server = make_server();
         rt().block_on(async {
@@ -355,7 +355,7 @@ mod tests {
     /// The Nth wrong-password attempt locks the account: the correct password
     /// then returns 400 `invalid_grant` with the lockout description.
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test account_lockout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it account_lockout_test:: -- --include-ignored"]
     fn at_threshold_locks_account() {
         let server = make_server();
         rt().block_on(async {
@@ -379,7 +379,7 @@ mod tests {
 
     /// The admin unlock endpoint clears the lock and restores access.
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test account_lockout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it account_lockout_test:: -- --include-ignored"]
     fn admin_unlock_restores_access() {
         let server = make_server();
         rt().block_on(async {
@@ -418,7 +418,7 @@ mod tests {
     /// Once `locked_until` lapses, the account auto-recovers without an admin
     /// action. We simulate the elapsed window by rewinding `locked_until`.
     #[test]
-    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test account_lockout_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run: cargo test -p ferriskey-api --test it account_lockout_test:: -- --include-ignored"]
     fn auto_recovery_after_window_elapses() {
         let server = make_server();
         rt().block_on(async {

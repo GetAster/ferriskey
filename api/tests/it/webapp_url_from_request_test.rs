@@ -176,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webapp_url_from_request_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webapp_url_from_request_test:: -- --include-ignored"]
     fn each_host_is_sent_to_the_login_page_on_its_own_host() {
         rt().block_on(async {
             let server = server(&ctx().from_request);
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webapp_url_from_request_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webapp_url_from_request_test:: -- --include-ignored"]
     fn a_host_outside_the_allowlist_gets_no_login_page() {
         rt().block_on(async {
             let server = server(&ctx().from_request);
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test webapp_url_from_request_test -- --ignored"]
+    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test it webapp_url_from_request_test:: -- --include-ignored"]
     fn without_the_flag_the_configured_webapp_url_is_kept_whatever_the_host() {
         rt().block_on(async {
             let server = server(&ctx().configured);
