@@ -31,7 +31,8 @@ cargo test --workspace --exclude ferriskey-client --lib --bins --tests --locked 
            | [.target.name, .executable, .manifest_path] | @tsv' \
   > "$logs/binaries.tsv"
 
-# One run line per (label, exe, manifest-dir, libtest-filter) tuple. An `it`
+# One run line per (label, exe, manifest-dir, libtest-filter) tuple; "-" means
+# no filter, because xargs drops an empty field and would shift the rest. An `it`
 # binary is expanded to one run per top-level module; the filter "module::"
 # selects exactly that module's tests.
 expand() {
@@ -40,7 +41,7 @@ expand() {
   case "$name" in
     oidc_bdd)
       # `harness = false`: parses its own arguments and rejects libtest flags.
-      printf '%s\t%s\t%s\t%s\n' "oidc_bdd" "$exe" "$dir" ""
+      printf '%s\t%s\t%s\t%s\n' "oidc_bdd" "$exe" "$dir" "-"
       ;;
     it)
       pkg="$(basename "$dir")"
@@ -54,7 +55,7 @@ expand() {
           done
       ;;
     *)
-      printf '%s\t%s\t%s\t%s\n' "$name" "$exe" "$dir" ""
+      printf '%s\t%s\t%s\t%s\n' "$name" "$exe" "$dir" "-"
       ;;
   esac
 }
@@ -66,6 +67,7 @@ done < "$logs/binaries.tsv" > "$logs/runs.tsv"
 
 run() {
   local label="$1" exe="$2" dir="$3" filter="$4" log
+  [ "$filter" = "-" ] && filter=""
   log="$logs/$(echo "$label" | tr '/:' '__').log"
   # shellcheck disable=SC2206
   local args=(--include-ignored $SKIP_ARGS)
