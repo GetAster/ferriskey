@@ -17,11 +17,11 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-1` on `upgrade/ferriskey-v0.10.2`, cut from the upstream tag `v0.10.2` (`15a1148a`). By owner decision (2026-11-05) this tag was created before `aster-idp` had tests to run against it; no image has been built from it yet.
+`aster-ferriskey-v0.10.2-1` on `upgrade/ferriskey-v0.10.2`, cut from the upstream tag `v0.10.2` (`15a1148a`). By owner decision (2026-11-05) this tag was created before `aster-idp` had tests to run against it. Its images (`api` and `webapp` targets of the Dockerfile) are built but not yet published to a registry, so the table lists their image IDs; the registry digests replace them once published.
 
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-1` | `2508c406` | Not built yet |
+| `aster-ferriskey-v0.10.2-1` | `2508c406` | Not published. Image IDs: api `sha256:66ea5e2ea364e8fe7ab03e61c06a4c64c94e7dded46eb66c726a51d61441e7c5`, webapp `sha256:25d43e942ccb8b6becfcfcc326da79f9aeb92fa4414c9176b13d0bcfe2521b89` |
 
 ## Patches
 
