@@ -1,4 +1,4 @@
-FROM rust:1.99.0-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS chef
+FROM rust:1.99.1-trixie@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137 AS chef
 
 WORKDIR /usr/local/src/ferriskey
 
@@ -27,7 +27,7 @@ RUN cargo build --release --bin ferriskey-api --bin ferriskey-operator
 # It has no shell and no package manager: every entrypoint used against these
 # images (`ferriskey-api`, `ferriskey-operator`, `sqlx migrate run`) is an exec
 # of a binary on PATH, so nothing depends on /bin/sh.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:b7e81cb1af38d9345680e68bcf564d388f96304e25222030fc8c051faf8565b3 AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1 AS runtime
 
 # distroless defaults WORKDIR to /home/nonroot; keep / as before.
 WORKDIR /
@@ -53,7 +53,7 @@ EXPOSE 80
 ENTRYPOINT ["ferriskey-operator"]
 
 # ── Frontend build ────────────────────────────────────────────────────────────
-FROM node:26.12.0-alpine3.24@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS webapp-build
+FROM node:26.13.0-alpine3.24@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS webapp-build
 
 WORKDIR /usr/local/src/ferriskey
 
@@ -79,32 +79,3 @@ COPY --chown=101:101 front/nginx.conf /etc/nginx/conf.d/default.conf
 # Owned by the nginx user (101) so the entrypoint can write API_URL into config.json.
 COPY --chown=101:101 --from=webapp-build /usr/local/src/ferriskey/dist /usr/share/nginx/html
 COPY --chmod=0755 front/docker-entrypoint.sh /docker-entrypoint.d/docker-entrypoint.sh
-
-# ── Standalone image (API + Frontend, single container) ───────────────────────
-FROM debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS standalone
-
-# hadolint ignore=DL3008
-RUN \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-    ca-certificates=20250419 \
-    libssl3t64=3.5.7-1~deb13u3 \
-    nginx \
-    supervisor && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -f /etc/nginx/sites-enabled/default
-
-COPY --from=builder /usr/local/src/ferriskey/target/release/ferriskey-api /usr/local/bin/
-COPY --from=builder /usr/local/src/ferriskey/core/migrations /usr/local/src/ferriskey/migrations
-COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/
-# Owned by the nginx user (101) so the entrypoint can write API_URL into config.json.
-COPY --chown=101:101 --from=webapp-build /usr/local/src/ferriskey/dist /usr/share/nginx/html
-COPY --chmod=0755 front/docker-entrypoint.sh /docker-entrypoint.d/docker-entrypoint.sh
-
-COPY front/nginx-standalone.conf /etc/nginx/conf.d/default.conf
-COPY docker/supervisord.conf /etc/supervisor/conf.d/ferriskey.conf
-COPY --chmod=0755 docker/standalone-entrypoint.sh /standalone-entrypoint.sh
-
-EXPOSE 80
-
-ENTRYPOINT ["/standalone-entrypoint.sh"]

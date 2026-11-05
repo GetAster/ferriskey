@@ -15,7 +15,7 @@ mod tests {
             DatabaseConfig, FerriskeyConfig, entities::StartupConfig, ports::CoreService,
         },
     };
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use serde_json::{Value, json};
     use sha1::Sha1;
     use sqlx::{Executor, PgPool};
@@ -124,6 +124,8 @@ mod tests {
             client_metadata_allow_private_endpoints: false,
             config_cache_ttl_seconds: 0,
             password_hashing: PasswordHashingCost::default(),
+            refresh_token_format: Default::default(),
+            refresh_token_commit: Default::default(),
             webapp_url: WEBAPP_URL.to_string(),
             database: DatabaseConfig {
                 host: db_host,
@@ -132,6 +134,8 @@ mod tests {
                 password: db_password,
                 name: db_name,
                 schema: schema.clone(),
+                max_connections: 100,
+                min_connections: 5,
             },
         })
         .await

@@ -113,6 +113,8 @@ mod tests {
             client_metadata_allow_private_endpoints: false,
             config_cache_ttl_seconds: 0,
             password_hashing: PasswordHashingCost::default(),
+            refresh_token_format: Default::default(),
+            refresh_token_commit: Default::default(),
             webapp_url: WEBAPP_URL.to_string(),
             database: DatabaseConfig {
                 host: db_host,
@@ -121,6 +123,8 @@ mod tests {
                 password: db_password,
                 name: db_name,
                 schema: schema.clone(),
+                max_connections: 100,
+                min_connections: 5,
             },
         })
         .await
@@ -257,7 +261,7 @@ mod tests {
     }
 
     fn totp_code_for(secret_base32: &str) -> String {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha1::Sha1;
 
         let secret = base32::decode(base32::Alphabet::Rfc4648 { padding: false }, secret_base32)

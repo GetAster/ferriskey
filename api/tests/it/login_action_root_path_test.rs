@@ -98,6 +98,8 @@ mod tests {
             client_metadata_allow_private_endpoints: false,
             config_cache_ttl_seconds: 0,
             password_hashing: PasswordHashingCost::default(),
+            refresh_token_format: Default::default(),
+            refresh_token_commit: Default::default(),
             webapp_url: WEBAPP_URL.to_string(),
             database: DatabaseConfig {
                 host: db_host,
@@ -106,6 +108,8 @@ mod tests {
                 password: db_password,
                 name: db_name,
                 schema,
+                max_connections: 100,
+                min_connections: 5,
             },
         })
         .await

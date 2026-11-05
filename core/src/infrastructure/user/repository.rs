@@ -309,7 +309,10 @@ impl UserRepository for PostgresUserRepository {
             .filter(crate::entity::users::Column::ClientId.eq(client_id))
             .one(&self.db)
             .await
-            .map_err(|_| CoreError::NotFound)?
+            .map_err(|e| {
+                error!("Error retrieving user by client ID: {:?}", e);
+                CoreError::InternalServerError
+            })?
             .ok_or(CoreError::NotFound)?;
 
         let user = user.into();
@@ -339,6 +342,19 @@ impl UserRepository for PostgresUserRepository {
         }
 
         Ok(Unscoped::new(user))
+    }
+
+    async fn get_by_id_without_relations(&self, id: Uuid) -> Result<Unscoped<User>, CoreError> {
+        let user_model = crate::entity::users::Entity::find_by_id(id)
+            .one(&self.db)
+            .await
+            .map_err(|e| {
+                error!("Error retrieving user by ID: {:?}", e);
+                CoreError::InternalServerError
+            })?
+            .ok_or(CoreError::NotFound)?;
+
+        Ok(Unscoped::new(user_model.into()))
     }
 
     async fn list(

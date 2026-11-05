@@ -1,8 +1,6 @@
-use crate::common::{
-    ClientSpec, SeededClient, SeededUser, TestApp, app, authorize, query_param, rt,
-};
 use axum::http::HeaderValue;
-use hmac::{Hmac, Mac};
+use crate::common::{ClientSpec, SeededClient, SeededUser, TestApp, app, authorize, query_param, rt};
+use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
 use sha1::Sha1;
 use uuid::Uuid;
