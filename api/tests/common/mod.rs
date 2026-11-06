@@ -29,6 +29,7 @@ pub const ADMIN_CLIENT_ID: &str = "admin-cli";
 pub const CALLBACK: &str = "http://localhost/callback";
 
 pub struct TestApp {
+    pub service: ferriskey_core::application::services::ApplicationService,
     router: Mutex<Router>,
     pub realm: String,
     pub realm_id: Uuid,
@@ -258,10 +259,11 @@ impl TestApp {
             },
             ..Args::default()
         };
-        let state = AppState::new(Arc::new(args), service);
+        let state = AppState::new(Arc::new(args), service.clone());
         let router = router(state).expect("build router");
 
         TestApp {
+            service,
             router: Mutex::new(router),
             realm,
             realm_id,
@@ -301,8 +303,9 @@ impl TestApp {
         .await
         .expect("create sibling service");
 
-        let state = AppState::new(Arc::new(Args::default()), service);
+        let state = AppState::new(Arc::new(Args::default()), service.clone());
         TestApp {
+            service,
             router: Mutex::new(router(state).expect("build router")),
             realm: self.realm.clone(),
             realm_id: self.realm_id,

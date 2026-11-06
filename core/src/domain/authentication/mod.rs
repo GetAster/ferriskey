@@ -2,6 +2,7 @@ pub mod backchannel_logout;
 pub mod client_authentication;
 pub mod device_flow;
 pub mod entities;
+pub mod issuance;
 pub mod login_context;
 pub mod login_resolver;
 pub mod mapper_engine;
