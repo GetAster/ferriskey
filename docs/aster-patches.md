@@ -2,7 +2,7 @@
 
 This repository is Aster's fork of [ferriskey/ferriskey](https://github.com/ferriskey/ferriskey). Aster carries the patches listed below on top of upstream releases. Upstream maintainers are welcome to incorporate any of them, in whole or in part, at their discretion.
 
-Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. The fork is a deployed server, not a published library, so its versions are container image tags rather than crate versions.
+Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. The fork supplies both the standalone server and an embeddable API library. Container builds retain image tags; aster-idp pins the API crate to an exact Git revision.
 
 ## Branch and tag model
 
@@ -32,5 +32,10 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 | 3 | `feat/asserted-actor-v0.10.2` | Token-exchange request parameter `actor_assertion`: a name the requesting client vouches for, in place of an `actor_token`. Gated by the new policy flag `allow_asserted_actor` plus `allow_delegation`; exclusive with `actor_token`; 1-256 bytes without control or invisible characters. Emits `act: {sub, client_id, asserted: true}`, wrapping any recorded chain as an actor token does; recorded in the security event. Cherry-picks onto row 2 with trivial conflicts (policy fields, tests, locales). | Not submitted. |
 | 4 | `feat/signing-key-rotation-v0.10.2` | Several signing keys per realm with a state (`next`, `active`, `retired`); tokens verify by the `kid` in their header with that key's own algorithm; the JWKS publishes active, next and unexpired retired keys; `POST /realms/{name}/keys/next` and `/keys/rotate` stage and promote keys (new keys follow `default_signing_algorithm`, so a realm moves from RS256 to EdDSA by rotating). Based on row 1 (`feat/eddsa-signing-v0.10.2`). | Not submitted. |
 | 5 | `feat/realm-org-root-v0.10.2` | Nullable `realms.org_root_pubkey`: the organisation root's Ed25519 public key as 64 lowercase hex characters (public material), validated in the API and the repository and checked by the database; `PUT /realms/{name}/org-root` sets or replaces it (needs the right to update the realm); returned with the realm. Based on the patched line at row 4 (`19d1baf9`). Re-cut for `v0.10.2`: upstream's `InvalidatingRealmRepository` forwards the setter and announces the change. | Not submitted. |
+
+| 6 | `feat/embeddable-builder-v0.10.2` | Host-owned embedding builder returns router, application service and controlled shutdown. Host supplies metrics and owns tracing, crypto and listeners; explicit schema-migration policy; standalone uses the same builder. Background workers and delivery children are cancelled and joined before pools close. Based on patched line `2508c406`; topic `0a0884a5`, integrated `240a9e65`. | Not submitted. |
+| 7 | `feat/issuance-api-v0.10.2` | Trusted in-process sessionless access-token issuance reuses realm signing and target mappers; rechecks subject/client/realm eligibility, exact scope and lifetime limits. Typed confirmation and generic extra claims cannot override security claims or mapper output. Caller owns proof and authority checks. Based on row 6 topic `0a0884a5`; topic `127d4690`, integrated `bc83b76e`. | Not submitted. |
+
+The local patched line now contains rows 6–7 at `bc83b76ed05f54daf20a629a95352c98a7046f4e`. These commits are not a new release tag or deployment. Validation: real PostgreSQL builder and issuance tests, lifecycle cancellation tests, and token-exchange regressions; the aster-idp Salvo integration proof is recorded in the internal embedding plan.
 
 Planned patches are not listed here until they land.
