@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Notify, mpsc};
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::warn;
 
 use crate::domain::authentication::backchannel_logout::{
@@ -24,11 +25,25 @@ impl BackchannelLogoutDispatcher {
     where
         S: BackchannelLogoutService + 'static,
     {
+        let (dispatcher, _worker, _stop) = Self::spawn_managed(service);
+        dispatcher
+    }
+
+    /// Starts a worker whose lifetime is controlled by the application owner.
+    pub fn spawn_managed<S>(service: Arc<S>) -> (Self, JoinHandle<()>, Arc<Notify>)
+    where
+        S: BackchannelLogoutService + 'static,
+    {
         let (sender, receiver) = mpsc::channel(QUEUE_CAPACITY);
-        tokio::spawn(deliver_ended_sessions(receiver, service));
-        Self {
-            sender: Some(sender),
-        }
+        let stop = Arc::new(Notify::new());
+        let worker = tokio::spawn(deliver_ended_sessions(receiver, service, stop.clone()));
+        (
+            Self {
+                sender: Some(sender),
+            },
+            worker,
+            stop,
+        )
     }
 
     /// A dispatcher that drops everything, for tests and tools that run
@@ -52,19 +67,80 @@ impl BackchannelLogoutNotifier for BackchannelLogoutDispatcher {
     }
 }
 
-async fn deliver_ended_sessions<S>(mut receiver: mpsc::Receiver<EndedSession>, service: Arc<S>)
-where
+async fn deliver_ended_sessions<S>(
+    mut receiver: mpsc::Receiver<EndedSession>,
+    service: Arc<S>,
+    stop: Arc<Notify>,
+) where
     S: BackchannelLogoutService + 'static,
 {
-    let permits = Arc::new(Semaphore::new(CONCURRENT_DELIVERIES));
-    while let Some(session) = receiver.recv().await {
-        let Ok(permit) = permits.clone().acquire_owned().await else {
+    // JoinSet aborts in-flight deliveries when this worker is cancelled.
+    let mut deliveries = JoinSet::new();
+    let mut accepting = true;
+    loop {
+        if !accepting && deliveries.is_empty() {
             return;
-        };
-        let service = service.clone();
-        tokio::spawn(async move {
-            service.deliver(session).await;
-            drop(permit);
+        }
+        tokio::select! {
+            _ = stop.notified() => { deliveries.shutdown().await; return; }
+            Some(_) = deliveries.join_next(), if !deliveries.is_empty() => {}
+            session = receiver.recv(), if accepting && deliveries.len() < CONCURRENT_DELIVERIES => {
+                let Some(session) = session else { accepting = false; continue; };
+                let service = service.clone();
+                deliveries.spawn(async move { service.deliver(session).await; });
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::authentication::backchannel_logout::DeliveryReport;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    struct PendingDelivery {
+        started: Notify,
+        dropped: Arc<AtomicBool>,
+    }
+    struct MarkDropped(Arc<AtomicBool>);
+    impl Drop for MarkDropped {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    impl BackchannelLogoutService for PendingDelivery {
+        async fn deliver(&self, _: EndedSession) -> DeliveryReport {
+            let _guard = MarkDropped(self.dropped.clone());
+            self.started.notify_one();
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn closing_the_sender_keeps_shutdown_selectable_during_delivery() {
+        let service = Arc::new(PendingDelivery {
+            started: Notify::new(),
+            dropped: Arc::new(AtomicBool::new(false)),
         });
+        let (dispatcher, worker, stop) =
+            BackchannelLogoutDispatcher::spawn_managed(service.clone());
+        dispatcher.sessions_ended(vec![EndedSession {
+            realm_id: Default::default(),
+            session_id: uuid::Uuid::new_v4(),
+            user_id: uuid::Uuid::new_v4(),
+            participants: vec![],
+        }]);
+        service.started.notified().await;
+        drop(dispatcher);
+        // Let the worker observe the closed source before requesting shutdown.
+        tokio::task::yield_now().await;
+        stop.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(service.dropped.load(Ordering::SeqCst));
     }
 }

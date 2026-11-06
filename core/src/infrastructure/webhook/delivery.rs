@@ -6,7 +6,8 @@ use std::time::Duration;
 use chrono::Utc;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, StatusCode, Url, redirect};
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{Notify, mpsc};
+use tokio::task::{JoinHandle, JoinSet};
 use tracing::error;
 use uuid::Uuid;
 
@@ -77,32 +78,40 @@ impl DeliveryFailure {
     }
 }
 
-pub fn spawn_dispatcher<D, S>(deliveries: D, security_events: S) -> mpsc::Sender<DeliveryJob>
+pub fn spawn_managed_dispatcher<D, S>(
+    deliveries: D,
+    security_events: S,
+) -> (mpsc::Sender<DeliveryJob>, JoinHandle<()>, Arc<Notify>)
 where
     D: WebhookDeliveryRepository + Clone + 'static,
     S: SecurityEventRepository + Clone + 'static,
 {
     let (sender, mut receiver) = mpsc::channel::<DeliveryJob>(QUEUE_CAPACITY);
-
-    tokio::spawn(async move {
-        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DELIVERIES));
-
-        while let Some(job) = receiver.recv().await {
-            let permit = match Arc::clone(&semaphore).acquire_owned().await {
-                Ok(permit) => permit,
-                Err(_) => break,
-            };
-
-            let deliveries = deliveries.clone();
-            let security_events = security_events.clone();
-            tokio::spawn(async move {
-                deliver_once(job, &deliveries, &security_events).await;
-                drop(permit);
-            });
+    let stop = Arc::new(Notify::new());
+    let stopping = stop.clone();
+    let worker = tokio::spawn(async move {
+        // Cancelling this dispatcher also cancels all of its delivery tasks.
+        let mut running = JoinSet::new();
+        let mut accepting = true;
+        loop {
+            if !accepting && running.is_empty() {
+                return;
+            }
+            tokio::select! {
+                _ = stopping.notified() => { running.shutdown().await; return; }
+                Some(_) = running.join_next(), if !running.is_empty() => {}
+                job = receiver.recv(), if accepting && running.len() < MAX_CONCURRENT_DELIVERIES => {
+                    let Some(job) = job else { accepting = false; continue; };
+                    let deliveries = deliveries.clone();
+                    let security_events = security_events.clone();
+                    running.spawn(async move {
+                        deliver_once(job, &deliveries, &security_events).await;
+                    });
+                }
+            }
         }
     });
-
-    sender
+    (sender, worker, stop)
 }
 
 pub async fn deliver_once<D, S>(job: DeliveryJob, deliveries: &D, security_events: &S)

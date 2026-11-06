@@ -17,7 +17,11 @@ const ANNOUNCE_TIMEOUT: Duration = Duration::from_secs(5);
 const FIRST_RETRY: Duration = Duration::from_secs(1);
 const LONGEST_RETRY: Duration = Duration::from_secs(30);
 
-pub fn spawn_token_state_sync(pool: &PgPool, state: Arc<TokenState>, feed: ChangeFeed) {
+pub fn spawn_token_state_sync(
+    pool: &PgPool,
+    state: Arc<TokenState>,
+    feed: ChangeFeed,
+) -> [tokio::task::JoinHandle<()>; 2] {
     let options = pool.connect_options().as_ref().clone();
     let announcing = PgPoolOptions::new()
         .max_connections(1)
@@ -28,8 +32,10 @@ pub fn spawn_token_state_sync(pool: &PgPool, state: Arc<TokenState>, feed: Chang
         .connect_lazy_with(options);
     let origin = Uuid::new_v4().to_string();
 
-    tokio::spawn(publish(announcing, origin.clone(), feed));
-    tokio::spawn(listen(listening, origin, state));
+    [
+        tokio::spawn(publish(announcing, origin.clone(), feed)),
+        tokio::spawn(listen(listening, origin, state)),
+    ]
 }
 
 async fn publish(pool: PgPool, origin: String, mut feed: ChangeFeed) {

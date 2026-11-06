@@ -19,11 +19,9 @@ use clap::Parser;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 
-use crate::application::http::server::http_server::{router, state};
-use crate::application::http::server::openapi::ApiDoc;
-use crate::args::{Args, Command, LogArgs, ObservabilityArgs};
-use ferriskey_core::domain::common::entities::StartupConfig;
-use ferriskey_core::domain::common::ports::CoreService;
+use ferriskey_api::application::http::server::openapi::ApiDoc;
+use ferriskey_api::args::{Args, Command, LogArgs, ObservabilityArgs};
+use ferriskey_api::{FerriskeyApp, HostOptions, SchemaMigrations, build};
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::{LogExporter, MetricExporter, WithExportConfig};
 use opentelemetry_otlp::{Protocol, SpanExporter};
@@ -36,9 +34,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt};
 use utoipa::OpenApi;
-
-pub mod application;
-pub mod args;
 
 fn init_tracing_and_logging(
     log_args: &LogArgs,
@@ -166,35 +161,23 @@ async fn main() -> Result<(), anyhow::Error> {
         return Ok(());
     }
 
-    ferriskey_api_core::url::check_webapp_url_settings(&args).map_err(anyhow::Error::msg)?;
+    // The executable is the host and selects crypto before service composition.
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("failed to install crypto provider"))?;
 
-    let app_state = state(args.clone()).await?;
-
-    app_state
-        .service
-        .initialize_application(StartupConfig {
-            admin_email: args.admin.email.clone(),
-            admin_password: args.admin.password.clone(),
-            admin_username: args.admin.username.clone(),
-            default_client_id: "security-admin-console".to_string(),
-            master_realm_name: "master".to_string(),
-            webapp_url: args.webapp_url.clone(),
-        })
-        .await?;
-
-    let report = app_state.service.run_data_migrations().await?;
-    if report.is_empty() {
-        info!("data migrations: already up to date");
-    } else {
-        for record in &report.applied {
-            info!(
-                "data migration applied: v{} — {}",
-                record.version, record.name
-            );
-        }
-    }
-
-    let router = router(app_state)?;
+    let FerriskeyApp {
+        router,
+        service: _,
+        shutdown,
+    } = build(
+        args.clone(),
+        HostOptions {
+            metrics: Some(axum_prometheus::PrometheusMetricLayer::pair()),
+            schema_migrations: SchemaMigrations::ExternallyManaged,
+        },
+    )
+    .await?;
 
     let addr = {
         let addrs = format!("{}:{}", args.server.host, args.server.port)
@@ -212,22 +195,35 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     };
 
-    if let Some(tls) = &args.server.tls {
-        debug!("initializing crypto provider");
-        rustls::crypto::aws_lc_rs::default_provider()
-            .install_default()
-            .expect("failed to install crypto provider");
-        debug!("loading tls config");
-        let tls_cfg = RustlsConfig::from_pem_file(tls.cert.clone(), tls.key.clone()).await?;
-        info!("listening on {addr}");
-        axum_server::bind_rustls(addr, tls_cfg)
-            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
-            .await?;
-    } else {
-        info!("listening on {addr}");
-        axum_server::bind(addr)
-            .serve(router.into_make_service_with_connect_info::<SocketAddr>())
-            .await?;
-    }
-    Ok(())
+    let handle = axum_server::Handle::new();
+    let server_handle = handle.clone();
+    let serving = async {
+        if let Some(tls) = &args.server.tls {
+            debug!("loading tls config");
+            let tls_cfg = RustlsConfig::from_pem_file(tls.cert.clone(), tls.key.clone()).await?;
+            info!("listening on {addr}");
+            axum_server::bind_rustls(addr, tls_cfg)
+                .handle(server_handle)
+                .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+                .await?;
+        } else {
+            info!("listening on {addr}");
+            axum_server::bind(addr)
+                .handle(server_handle)
+                .serve(router.into_make_service_with_connect_info::<SocketAddr>())
+                .await?;
+        }
+        Ok::<(), anyhow::Error>(())
+    };
+    tokio::pin!(serving);
+    let result = tokio::select! {
+        result = &mut serving => result,
+        signal = tokio::signal::ctrl_c() => {
+            handle.graceful_shutdown(Some(std::time::Duration::from_secs(30)));
+            let result = serving.await;
+            signal.map_err(anyhow::Error::from).and(result)
+        }
+    };
+    shutdown.shutdown().await;
+    result
 }
