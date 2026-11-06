@@ -212,6 +212,7 @@ pub mod token_revocation;
 pub mod trident;
 pub mod user;
 pub mod webhook;
+pub mod workers;
 
 pub use services::ApplicationService;
 
@@ -228,6 +229,19 @@ pub async fn create_service_with_secrets(
     config: FerriskeyConfig,
     secrets_encryption_keys: &str,
 ) -> Result<ApplicationService, CoreError> {
+    let (service, workers) = create_managed_service(config, secrets_encryption_keys, false).await?;
+    workers.detach();
+    Ok(service)
+}
+
+/// Composes the service while retaining ownership of all background work.
+/// Schema migrations run before secret backfill and repository construction.
+pub async fn create_managed_service(
+    config: FerriskeyConfig,
+    secrets_encryption_keys: &str,
+    run_schema_migrations: bool,
+) -> Result<(ApplicationService, workers::ApplicationShutdown), CoreError> {
+    let mut workers = workers::ApplicationShutdown::default();
     let secret_cipher = SecretCipher::from_config(secrets_encryption_keys)
         .map_err(|error| CoreError::Configuration(error.to_string()))?;
     if !secret_cipher.is_enabled() {
@@ -265,6 +279,14 @@ pub async fn create_service_with_secrets(
     .await
     .map_err(|e| CoreError::ServiceUnavailable(e.to_string()))?;
 
+    workers.set_pools(&postgres.get_db(), &postgres.get_async_commit_db());
+    if run_schema_migrations {
+        sqlx::migrate!("./migrations")
+            .run(postgres.get_db().get_postgres_connection_pool())
+            .await
+            .map_err(|error| CoreError::ServiceUnavailable(error.to_string()))?;
+    }
+
     if let Err(error) = seal_existing_secrets(&postgres.get_db(), &secret_cipher).await {
         tracing::error!(%error, "the stored secrets could not be sealed, they are sealed on the next start");
     }
@@ -272,11 +294,11 @@ pub async fn create_service_with_secrets(
     let config_cache_ttl = Duration::from_secs(config.config_cache_ttl_seconds);
     let (token_state, token_state_feed) = TokenState::new(config_cache_ttl);
     if !config_cache_ttl.is_zero() {
-        spawn_token_state_sync(
+        workers.extend(spawn_token_state_sync(
             postgres.get_db().get_postgres_connection_pool(),
             token_state.clone(),
             token_state_feed,
-        );
+        ));
     }
     let realm = Arc::new(InvalidatingRealmRepository::new(
         CachedRealmRepository::new(
@@ -345,10 +367,10 @@ pub async fn create_service_with_secrets(
             "WEBHOOK_ALLOW_PRIVATE_ENDPOINTS is on: webhooks may reach loopback and private addresses. Never enable this in production."
         );
     }
-    let webhook = Arc::new(PostgresWebhookRepository::new(
-        postgres.get_db(),
-        private_endpoints,
-    ));
+    let (webhook, webhook_dispatcher, webhook_stop) =
+        PostgresWebhookRepository::new_managed(postgres.get_db(), private_endpoints);
+    workers.track_dispatcher(webhook_dispatcher, webhook_stop);
+    let webhook = Arc::new(webhook);
     let webhook_delivery = Arc::new(PostgresWebhookDeliveryRepository::new(postgres.get_db()));
     let mut stored_refresh_tokens = PostgresRefreshTokenRepository::new(postgres.get_db());
     if config.refresh_token_commit == crate::domain::common::RefreshTokenCommit::Async {
@@ -367,14 +389,15 @@ pub async fn create_service_with_secrets(
     ));
     // Every session deleted through this store sends a logout token to the
     // clients that took part in it (OIDC Back-Channel Logout).
-    let backchannel_logout =
-        BackchannelLogoutDispatcher::spawn(Arc::new(BackchannelLogoutServiceImpl::new(
+    let (backchannel_logout, logout_worker, logout_stop) =
+        BackchannelLogoutDispatcher::spawn_managed(Arc::new(BackchannelLogoutServiceImpl::new(
             realm.clone(),
             client.clone(),
             Arc::new(KeystoreLogoutTokenSigner::new(keystore.clone())),
             Arc::new(HttpLogoutTokenSender::new(private_endpoints)),
             BackchannelLogoutConfig::default(),
         )));
+    workers.track_dispatcher(logout_worker, logout_stop);
     let user_session = Arc::new(CachedUserSessionRepository::new(
         Arc::new(NotifyingUserSessionRepository::new(
             Arc::new(PostgresUserSessionRepository::new(postgres.get_db())),
@@ -513,21 +536,21 @@ pub async fn create_service_with_secrets(
     ));
 
     let (compass_tx, compass_rx) = tokio::sync::mpsc::channel(1024);
-    tokio::spawn(compass_writer_task(
+    workers.spawn(compass_writer_task(
         compass_rx,
         PostgresCompassFlowRepository::new(postgres.get_db()),
         WriterConfig::default(),
     ));
-    tokio::spawn(compass_retention_task(PostgresCompassFlowRepository::new(
+    workers.spawn(compass_retention_task(PostgresCompassFlowRepository::new(
         postgres.get_db(),
     )));
-    tokio::spawn(webhook_delivery_worker_task(
+    workers.spawn(webhook_delivery_worker_task(
         webhook_delivery.as_ref().clone(),
         webhook.as_ref().clone(),
         security_event.as_ref().clone(),
         private_endpoints,
     ));
-    tokio::spawn(webhook_delivery_retention_task(
+    workers.spawn(webhook_delivery_retention_task(
         webhook_delivery.as_ref().clone(),
     ));
     let flow_recorder = FlowRecorder::new(compass_tx);
@@ -628,11 +651,11 @@ pub async fn create_service_with_secrets(
         flow_recorder.clone(),
     );
 
-    tokio::spawn(purge_expired_device_sessions_task(
+    workers.spawn(purge_expired_device_sessions_task(
         device_flow_service.clone(),
         DEVICE_SESSION_PURGE_PERIOD,
     ));
-    tokio::spawn(expired_rows_retention_task(
+    workers.spawn(expired_rows_retention_task(
         stored_access_tokens,
         refresh_token.as_ref().clone(),
         PostgresUserSessionRepository::new(postgres.get_db()),
@@ -936,7 +959,7 @@ pub async fn create_service_with_secrets(
         security_event_repository: security_event.clone(),
     };
 
-    Ok(app)
+    Ok((app, workers))
 }
 
 #[cfg(test)]

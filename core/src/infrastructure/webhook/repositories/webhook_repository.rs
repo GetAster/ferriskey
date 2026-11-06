@@ -74,16 +74,33 @@ pub struct PostgresWebhookRepository {
 
 impl PostgresWebhookRepository {
     pub fn new(db: DatabaseConnection, private_endpoints: PrivateEndpoints) -> Self {
+        let (repository, _worker, _stop) = Self::new_managed(db, private_endpoints);
+        repository
+    }
+
+    pub fn new_managed(
+        db: DatabaseConnection,
+        private_endpoints: PrivateEndpoints,
+    ) -> (
+        Self,
+        tokio::task::JoinHandle<()>,
+        std::sync::Arc<tokio::sync::Notify>,
+    ) {
         let deliveries = PostgresWebhookDeliveryRepository::new(db.clone());
         let security_events = PostgresSecurityEventRepository::new(db.clone());
-        let delivery_sender = delivery::spawn_dispatcher(deliveries.clone(), security_events);
+        let (delivery_sender, worker, stop) =
+            delivery::spawn_managed_dispatcher(deliveries.clone(), security_events);
 
-        Self {
-            db,
-            deliveries,
-            delivery_sender,
-            private_endpoints,
-        }
+        (
+            Self {
+                db,
+                deliveries,
+                delivery_sender,
+                private_endpoints,
+            },
+            worker,
+            stop,
+        )
     }
 }
 

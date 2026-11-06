@@ -67,6 +67,14 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, anyhow::Error> {
 
 ///  Returns the [`Router`] of this application.
 pub fn router(state: AppState) -> Result<Router, anyhow::Error> {
+    router_with_metrics(state, Some(prometheus_pair()))
+}
+
+/// Builds routes with host-owned metrics wiring; `None` skips metrics entirely.
+pub fn router_with_metrics(
+    state: AppState,
+    metrics: Option<(PrometheusMetricLayer<'static>, PrometheusHandle)>,
+) -> Result<Router, anyhow::Error> {
     let trace_layer = tower_http::trace::TraceLayer::new_for_http().make_span_with(
         |request: &axum::extract::Request| {
             let method = request.method().as_str();
@@ -130,8 +138,6 @@ pub fn router(state: AppState) -> Result<Router, anyhow::Error> {
         .allow_credentials(true)
         .max_age(PREFLIGHT_MAX_AGE);
 
-    let (prometheus_layer, metric_handle) = prometheus_pair();
-
     let mut openapi = ApiDoc::openapi();
     let mut paths = openapi.paths.clone();
     paths.paths = openapi
@@ -185,14 +191,23 @@ pub fn router(state: AppState) -> Result<Router, anyhow::Error> {
         } else {
             axum::Router::new()
         })
-        .route(
-            &format!("{}/metrics", root_path),
-            get(|| async move { metric_handle.render() }),
-        )
+        .merge(if let Some((_, handle)) = &metrics {
+            let handle = handle.clone();
+            Router::new().route(
+                &format!("{}/metrics", root_path),
+                get(|| async move { handle.render() }),
+            )
+        } else {
+            Router::new()
+        })
         .layer(trace_layer)
         .layer(cors)
         .layer(CookieLayer::default())
-        .layer(prometheus_layer)
         .with_state(state);
+    let router = if let Some((layer, _)) = metrics {
+        router.layer(layer)
+    } else {
+        router
+    };
     Ok(router)
 }
