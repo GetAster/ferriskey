@@ -24,6 +24,7 @@ export default function PageLoginFeature() {
     sessionExpired,
     isAuthInitiated,
     passkeyRequired,
+    reauthenticationRequired,
     loginError,
     getAuthParamsFromUrl,
     getOAuthParams,
@@ -75,7 +76,7 @@ export default function PageLoginFeature() {
 
   const { showFloatingActionBar, countdown, cancelAutoRefresh, restartAuthFlow } =
     useSessionRefresh({
-      disabled: passkeyRequired,
+      disabled: passkeyRequired || reauthenticationRequired,
       isRedirecting,
       isSessionError,
       getOAuthParams,

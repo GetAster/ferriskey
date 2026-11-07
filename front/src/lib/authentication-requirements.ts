@@ -16,6 +16,9 @@ export function authenticationRequirementRedirect(
   if (body.reason === 'passkey_authentication_required') {
     return `/realms/${match[1]}/authentication/login?passkey_required=true`
   }
+  if (body.reason === 'reauthentication_required') {
+    return `/realms/${match[1]}/authentication/login?reauthentication_required=true`
+  }
   if (
     body.reason === 'unmet_authentication_requirements' &&
     isNavigableRedirect(body.redirect_url)
