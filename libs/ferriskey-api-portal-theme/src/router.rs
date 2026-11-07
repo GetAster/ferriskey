@@ -15,7 +15,7 @@ use axum::{
     Router, middleware,
     routing::{get, post, put},
 };
-use ferriskey_api_core::{app_state::AppState, auth::auth};
+use ferriskey_api_core::{app_state::AppState, auth::auth_admin};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -101,7 +101,7 @@ pub fn portal_theme_routes(state: AppState) -> Router<AppState> {
             ),
             get(get_page_requirements),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin));
 
     let public_routes = Router::new().route(
         &format!(

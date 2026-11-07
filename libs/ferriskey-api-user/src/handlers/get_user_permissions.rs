@@ -47,6 +47,12 @@ pub async fn get_user_permissions(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
 ) -> Result<Response<UserPermissionsResponse>, ApiError> {
+    // Reading one's own permissions is self-service; inspecting another user's
+    // permissions is administrative. The existing realm/permission policy still
+    // runs below in both cases.
+    if !identity.as_user().is_some_and(|user| user.id == user_id) {
+        ferriskey_api_core::auth::admit_admin(state.admin_admission.as_ref(), &identity)?;
+    }
     let permissions = state
         .service
         .get_user_permissions(

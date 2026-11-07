@@ -14,7 +14,7 @@ use axum::{
     Router, middleware,
     routing::{get, post},
 };
-use ferriskey_api_core::{app_state::AppState, auth::auth};
+use ferriskey_api_core::{app_state::AppState, auth::auth_admin};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -71,7 +71,7 @@ pub fn portal_layouts_routes(state: AppState) -> Router<AppState> {
             ),
             axum::routing::put(set_default_layout),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin));
 
     let public_routes = Router::new()
         .route(

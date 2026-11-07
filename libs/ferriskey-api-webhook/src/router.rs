@@ -8,7 +8,7 @@ use super::handlers::retry_delivery::{__path_retry_delivery, retry_delivery};
 use super::handlers::rotate_secret::{__path_rotate_secret, rotate_secret};
 use super::handlers::update_webhook::{__path_update_webhook, update_webhook};
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 use axum::{
     Router, middleware,
@@ -95,5 +95,5 @@ pub fn webhook_routes(state: AppState) -> Router<AppState> {
             ),
             post(rotate_secret),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

@@ -26,7 +26,7 @@ use axum::{
     routing::{get, post},
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::{auth, auth_admin};
 use utoipa::OpenApi;
 
 const BODY_LIMIT: usize = 64 * 1024;
@@ -126,7 +126,7 @@ pub fn authz_routes(state: AppState) -> Router<AppState> {
                 .put(update_template)
                 .delete(delete_template),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
         .layer(DefaultBodyLimit::max(MANAGEMENT_BODY_LIMIT));
 
     evaluation.merge(batch).merge(management).merge(metadata)

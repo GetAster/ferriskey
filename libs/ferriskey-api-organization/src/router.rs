@@ -1,7 +1,7 @@
 use axum::{Router, middleware, routing::get};
 use utoipa::OpenApi;
 
-use ferriskey_api_core::{app_state::AppState, auth::auth};
+use ferriskey_api_core::{app_state::AppState, auth::auth_admin};
 
 use super::handlers::{
     add_member::{__path_add_member, add_member},
@@ -182,5 +182,5 @@ pub fn organization_routes(state: AppState) -> Router<AppState> {
             ),
             axum::routing::put(upsert_group_attribute).delete(delete_group_attribute),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

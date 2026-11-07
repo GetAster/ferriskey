@@ -8,7 +8,7 @@ use crate::handlers::{
     get_stats::{__path_get_stats, get_stats},
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 #[derive(OpenApi)]
 #[openapi(paths(get_flows, get_flow, get_stats, get_daily_activity_stats))]
@@ -44,5 +44,5 @@ pub fn compass_routes(state: AppState) -> Router<AppState> {
             ),
             get(get_daily_activity_stats),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

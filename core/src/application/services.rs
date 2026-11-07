@@ -1075,6 +1075,17 @@ impl ApplicationService {
             .await
     }
 
+    /// Resolve a realm for trusted embedding-host configuration. This does not
+    /// authorize an HTTP caller or expose a new endpoint. Resolve once before
+    /// serving, then compare the ID with a verified identity's realm ID.
+    pub async fn resolve_realm_id(&self, realm_name: &str) -> Result<RealmId, CoreError> {
+        Ok(
+            RealmScope::resolve(self.realm_service.realm_repository.as_ref(), realm_name)
+                .await?
+                .id(),
+        )
+    }
+
     pub async fn client_is_known(&self, realm_name: &str, client_id: &str) -> bool {
         let Ok(scope) =
             RealmScope::resolve(self.realm_service.realm_repository.as_ref(), realm_name).await

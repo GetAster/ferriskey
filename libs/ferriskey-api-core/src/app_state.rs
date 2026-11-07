@@ -7,11 +7,13 @@ use ferriskey_core::domain::common::rate_limit::{
 
 use crate::admission::Admission;
 use crate::args::Args;
+use crate::auth::AdminAdmission;
 use crate::cors::{RealmOriginCache, WEB_ORIGIN_CACHE_TTL};
 
 #[derive(Clone)]
 pub struct AppState {
     pub args: Arc<Args>,
+    pub admin_admission: Option<AdminAdmission>,
     pub service: ApplicationService,
     pub web_origin_cache: Arc<RealmOriginCache>,
     pub client_auth_throttle: Arc<ClientAuthThrottle>,
@@ -23,6 +25,7 @@ impl AppState {
         let client_credentials_admission = Admission::sized(args.server.token_max_in_flight);
         Self {
             args,
+            admin_admission: None,
             service,
             web_origin_cache: Arc::new(RealmOriginCache::new(WEB_ORIGIN_CACHE_TTL)),
             client_auth_throttle: Arc::new(ClientAuthThrottle::per_minute(

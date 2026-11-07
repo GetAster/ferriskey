@@ -5,7 +5,7 @@ use axum::{
 use utoipa::OpenApi;
 
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 use super::handlers::{
     create_role::{__path_create_role, create_role},
@@ -64,5 +64,5 @@ pub fn role_routes(state: AppState) -> Router<AppState> {
             ),
             patch(update_role_permissions),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

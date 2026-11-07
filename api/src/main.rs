@@ -173,6 +173,7 @@ async fn main() -> Result<(), anyhow::Error> {
     } = build(
         args.clone(),
         HostOptions {
+            admin_admission: None,
             metrics: Some(axum_prometheus::PrometheusMetricLayer::pair()),
             schema_migrations: SchemaMigrations::ExternallyManaged,
         },
