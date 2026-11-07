@@ -283,9 +283,29 @@ impl TestApp {
         refresh_token_format: RefreshTokenFormat,
         refresh_token_commit: RefreshTokenCommit,
     ) -> TestApp {
+        self.sibling_with_endpoint_policy(refresh_token_format, refresh_token_commit, false)
+            .await
+    }
+
+    /// Explicitly allows loopback HTTP for a real external-provider test server.
+    pub async fn sibling_with_local_provider(&self) -> TestApp {
+        self.sibling_with_endpoint_policy(
+            RefreshTokenFormat::default(),
+            RefreshTokenCommit::default(),
+            true,
+        )
+        .await
+    }
+
+    async fn sibling_with_endpoint_policy(
+        &self,
+        refresh_token_format: RefreshTokenFormat,
+        refresh_token_commit: RefreshTokenCommit,
+        allow_private_endpoints: bool,
+    ) -> TestApp {
         let service = create_service_with_secrets(
             FerriskeyConfig {
-                webhook_allow_private_endpoints: false,
+                webhook_allow_private_endpoints: allow_private_endpoints,
                 client_metadata_allow_private_endpoints: false,
                 config_cache_ttl_seconds: self.config_cache_ttl_seconds,
                 password_hashing: PasswordHashingCost::default(),
