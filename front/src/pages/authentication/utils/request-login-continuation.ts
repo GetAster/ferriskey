@@ -1,4 +1,5 @@
 import { isNavigableRedirect } from '../../../lib/follow-server-redirect.ts'
+import { authenticationRequirementRedirect } from '../../../lib/authentication-requirements.ts'
 import type { LoginContinuation } from './continue-login'
 
 export type LoginContinuationResult =
@@ -10,17 +11,22 @@ export type LoginContinuationResult =
 export async function requestLoginContinuation(
   apiUrl: string,
   realm: string,
-  fetcher: typeof fetch = fetch,
+  fetcher: typeof fetch = fetch
 ): Promise<LoginContinuationResult> {
   const response = await fetcher(
     `${apiUrl.replace(/\/+$/, '')}/realms/${encodeURIComponent(realm)}/login-actions/continue`,
-    { method: 'POST', credentials: 'include' },
+    { method: 'POST', credentials: 'include' }
   )
-  if (response.status === 401) return { kind: 'unavailable' }
 
   const body: unknown = await response.json().catch(() => undefined)
   if (!response.ok) {
-    const data = body && typeof body === 'object' ? body as Record<string, unknown> : undefined
+    const target = authenticationRequirementRedirect(
+      body,
+      `/realms/${encodeURIComponent(realm)}/authentication/required-action`
+    )
+    if (target) return { kind: 'continue', next: { url: target } }
+    if (response.status === 401) return { kind: 'unavailable' }
+    const data = body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined
     const message = typeof data?.message === 'string' ? data.message : `HTTP ${response.status}`
     throw Object.assign(new Error(message), { status: response.status, data })
   }
@@ -30,9 +36,13 @@ export async function requestLoginContinuation(
       return { kind: 'continue', next: { url: next.url } }
     }
     const actions = next.required_actions
-    if (Array.isArray(actions) && actions.length > 0 && actions.every(action =>
-      ['verify_email', 'configure_otp', 'configure_passkey', 'update_password'].includes(action),
-    )) {
+    if (
+      Array.isArray(actions) &&
+      actions.length > 0 &&
+      actions.every((action) =>
+        ['verify_email', 'configure_otp', 'configure_passkey', 'update_password'].includes(action)
+      )
+    ) {
       return { kind: 'continue', next: { required_actions: actions } }
     }
   }

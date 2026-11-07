@@ -285,3 +285,9 @@ validation:
   otp_pin_length: Pin must be at least 6 characters long
   device_name_required: Device name must be at least 1 character long
   device_code_format: Expected format XXXX-XXXX using the device code charset.
+
+step_up:
+  title: Confirm with your passkey
+  description: This application requires a recent passkey sign-in.
+  authenticate: Use a passkey
+  expired_hint: If this sign-in has expired, return to the application and start again.

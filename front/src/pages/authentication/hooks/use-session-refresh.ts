@@ -4,12 +4,18 @@ import { toast } from 'sonner'
 import { AUTH_NAMESPACE } from '../constants'
 
 type Options = {
+  disabled?: boolean
   isRedirecting: boolean
   isSessionError: boolean
   getOAuthParams: () => Promise<{ query: string; realm: string }>
 }
 
-export function useSessionRefresh({ isRedirecting, isSessionError, getOAuthParams }: Options) {
+export function useSessionRefresh({
+  disabled = false,
+  isRedirecting,
+  isSessionError,
+  getOAuthParams,
+}: Options) {
   const { t } = useTranslation(AUTH_NAMESPACE)
   const [showSessionBar, setShowSessionBar] = useState(false)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -41,6 +47,7 @@ export function useSessionRefresh({ isRedirecting, isSessionError, getOAuthParam
 
   const restartAuthFlow = useCallback(async () => {
     cancelAutoRefresh()
+    if (disabled) return
 
     try {
       const { query, realm } = await getOAuthParams()
@@ -51,16 +58,16 @@ export function useSessionRefresh({ isRedirecting, isSessionError, getOAuthParam
         description: t('session.refresh_failed_description'),
       })
     }
-  }, [cancelAutoRefresh, getOAuthParams, t])
+  }, [cancelAutoRefresh, disabled, getOAuthParams, t])
 
   useEffect(() => {
     restartAuthFlowRef.current = restartAuthFlow
   }, [restartAuthFlow])
 
-  const showFloatingActionBar = isSessionError || showSessionBar
+  const showFloatingActionBar = !disabled && (isSessionError || showSessionBar)
 
   useEffect(() => {
-    if (isRedirecting) return
+    if (isRedirecting || disabled) return
 
     if (timerRef.current) {
       window.clearTimeout(timerRef.current)
@@ -75,7 +82,7 @@ export function useSessionRefresh({ isRedirecting, isSessionError, getOAuthParam
         window.clearTimeout(timerRef.current)
       }
     }
-  }, [isRedirecting, scheduleSessionExpirationBar, isSessionError])
+  }, [disabled, isRedirecting, scheduleSessionExpirationBar, isSessionError])
 
   useEffect(() => {
     if (!showFloatingActionBar) {

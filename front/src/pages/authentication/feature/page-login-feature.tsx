@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button'
 import { useGetLoginSettings } from '@/api/realm.api'
 import FloatingActionBar from '@/components/ui/floating-action-bar'
 import { useCallback, useEffect } from 'react'
@@ -18,8 +19,15 @@ export default function PageLoginFeature() {
   const navigate = useNavigate()
   const { t } = useTranslation(AUTH_NAMESPACE)
   const { isAuthenticated, clearAuthState } = useAuth()
-  const { realm_name, sessionExpired, isAuthInitiated, loginError, getAuthParamsFromUrl, getOAuthParams } =
-    useOAuthParams()
+  const {
+    realm_name,
+    sessionExpired,
+    isAuthInitiated,
+    passkeyRequired,
+    loginError,
+    getAuthParamsFromUrl,
+    getOAuthParams,
+  } = useOAuthParams()
 
   const sessionAction = resolveLoginSession({ isAuthenticated, isAuthInitiated, sessionExpired })
 
@@ -36,12 +44,11 @@ export default function PageLoginFeature() {
 
   const { data: loginSettings } = useGetLoginSettings({ realm: realm_name })
 
-  const { form, onSubmit, errorMessage, isSessionError, isMaintenanceError } =
-    useLoginForm({
-      realm_name,
-      loginError,
-      getAuthParamsFromUrl,
-    })
+  const { form, onSubmit, errorMessage, isSessionError, isMaintenanceError } = useLoginForm({
+    realm_name,
+    loginError,
+    getAuthParamsFromUrl,
+  })
 
   const getRememberMe = useCallback(
     () => Boolean(loginSettings?.remember_me_enabled && form.getValues('remember_me')),
@@ -68,6 +75,7 @@ export default function PageLoginFeature() {
 
   const { showFloatingActionBar, countdown, cancelAutoRefresh, restartAuthFlow } =
     useSessionRefresh({
+      disabled: passkeyRequired,
       isRedirecting,
       isSessionError,
       getOAuthParams,
@@ -93,6 +101,19 @@ export default function PageLoginFeature() {
   }
 
   if (!loginSettings) return null
+
+  if (passkeyRequired) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-2xl font-semibold">{t('step_up.title')}</h1>
+        <p>{t('step_up.description')}</p>
+        <p>{t('step_up.expired_hint')}</p>
+        <Button onClick={onPasskeyLogin} disabled={isPasskeyLoading}>
+          {t('step_up.authenticate')}
+        </Button>
+      </div>
+    )
+  }
 
   return (
     <>

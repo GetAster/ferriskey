@@ -316,3 +316,9 @@ validation:
   # TRANSLATOR NOTE: "device code charset" is implementation vocabulary — an end user cannot act
   # on it. Translated literally; the English should name the allowed characters instead.
   device_code_format: 格式应为 XXXX-XXXX，使用设备代码字符集。
+
+step_up:
+  title: 使用通行密钥确认
+  description: 此应用要求近期使用通行密钥登录。
+  authenticate: 使用通行密钥
+  expired_hint: 如果此次登录已过期，请返回应用并重新开始。
