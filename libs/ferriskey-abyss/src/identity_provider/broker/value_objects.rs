@@ -182,6 +182,24 @@ pub struct BrokerCallbackInput {
     pub user_agent: Option<String>,
 }
 
+/// Verified provider identity waiting for proof of the existing local address.
+/// This is internal server data, never accepted from a browser request.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct ProviderLinkIntent {
+    pub user_id: Uuid,
+    pub provider_id: Uuid,
+    pub provider_name: String,
+    pub external_id: String,
+    pub email: String,
+    /// Display-only profile captured at first consent (not identity evidence).
+    #[serde(default)]
+    pub given_name: Option<String>,
+    #[serde(default)]
+    pub family_name: Option<String>,
+    #[serde(default)]
+    pub remember_me: bool,
+}
+
 /// Output from broker callback handling
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct BrokerCallbackOutput {
@@ -207,6 +225,9 @@ pub struct BrokerCallbackOutput {
     pub required_actions: Vec<ferriskey_domain::user::entities::RequiredAction>,
     #[serde(default)]
     pub second_factor_pending: bool,
+    /// No primary authentication authority exists until this email proof succeeds.
+    #[serde(default, skip_serializing)]
+    pub pending_provider_link: Option<ProviderLinkIntent>,
 }
 
 /// User info extracted from IdP tokens

@@ -62,6 +62,13 @@ pub fn trident_routes(state: AppState) -> Router<AppState> {
     let public_routes = Router::new()
         .route(
             &format!(
+                "{}/realms/{{realm_name}}/login-actions/decline-provider-link",
+                state.args.server.root_path
+            ),
+            post(crate::handlers::magic_link::decline_provider_link),
+        )
+        .route(
+            &format!(
                 "{}/realms/{{realm_name}}/login-actions/send-magic-link",
                 state.args.server.root_path
             ),

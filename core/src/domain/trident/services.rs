@@ -2198,6 +2198,17 @@ where
         })
     }
 
+    async fn decline_provider_link(
+        &self,
+        realm_name: String,
+        session_code: Uuid,
+    ) -> Result<(), CoreError> {
+        let scope = RealmScope::resolve(self.realm_repository.as_ref(), &realm_name).await?;
+        self.magic_link_repository
+            .decline_provider_link(scope.id().into(), session_code)
+            .await
+    }
+
     async fn generate_magic_link(&self, input: MagicLinkInput) -> Result<(), CoreError> {
         let scope = RealmScope::resolve(self.realm_repository.as_ref(), &input.realm_name).await?;
         let realm = scope.realm();
@@ -2240,7 +2251,11 @@ where
             .await
         {
             Ok(Some(user)) => user,
-            Ok(None) if settings.passwordless_enabled && settings.user_registration_enabled => {
+            Ok(None)
+                if input.provider_link.is_none()
+                    && settings.passwordless_enabled
+                    && settings.user_registration_enabled =>
+            {
                 self.user_repository
                     .create_user(crate::domain::user::value_objects::CreateUserRequest {
                         id: None,
@@ -2263,6 +2278,28 @@ where
         };
         if !user.enabled || user.is_locked(Utc::now()) {
             return Ok(());
+        }
+        if let Some(intent) = &input.provider_link {
+            let code = input
+                .session_code
+                .as_deref()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or(CoreError::InvalidSession)?;
+            let session = self
+                .auth_session_repository
+                .get_by_session_code(code)
+                .await?
+                .in_realm(&scope)?
+                .into_inner();
+            if session.expires_at <= Utc::now()
+                || session.authenticated
+                || session.code.is_some()
+                || session.user_id.is_some()
+                || intent.user_id != user.id
+                || user.email.as_deref() != Some(intent.email.as_str())
+            {
+                return Err(CoreError::InvalidSession);
+            }
         }
         let _ = signup_session;
         self.magic_link_repository
@@ -2309,6 +2346,7 @@ where
                 expires_at,
                 auth_session_code,
                 user.email.clone().ok_or(CoreError::InvalidRequest)?,
+                input.provider_link.clone(),
             )
             .await?;
 
@@ -2330,8 +2368,18 @@ where
                     "Click the link below to sign in:\n{magic_link_url}\n\nThis link expires in {ttl_minutes} minutes.\n\nIf you did not request this, please ignore this email.",
                 );
 
-                let rendered = self
-                    .render_email_template(
+                let body = if let Some(intent) = &input.provider_link {
+                    format!(
+                        "Confirm connecting {} to your existing account:\n{magic_link_url}\n\nThis will allow that provider identity to sign in to your account. This link expires in {ttl_minutes} minutes. If you did not request this connection, do not open the link.",
+                        intent.provider_name
+                    )
+                } else {
+                    body
+                };
+                let rendered = if input.provider_link.is_some() {
+                    None
+                } else {
+                    self.render_email_template(
                         &scope,
                         tid,
                         &user,
@@ -2343,10 +2391,20 @@ where
                         "Your magic link",
                     )
                     .await
-                    .ok();
+                    .ok()
+                };
                 let (subject, html_body) = rendered
                     .map(|(subject, html)| (subject, Some(html)))
-                    .unwrap_or_else(|| ("Your magic link".to_string(), None));
+                    .unwrap_or_else(|| {
+                        (
+                            if input.provider_link.is_some() {
+                                "Confirm connecting your sign-in provider".to_string()
+                            } else {
+                                "Your magic link".to_string()
+                            },
+                            None,
+                        )
+                    });
 
                 match self
                     .email_port
@@ -2428,10 +2486,7 @@ where
             }
             (_, _) => {
                 warn!("SMTP not configured for realm, logging magic link instead");
-                debug!(
-                    "Magic link URL: {}/realms/{}/authentication/magic-link?token_id={}&magic_token={}",
-                    input.base_url, realm.name, magic_token_id, magic_token
-                );
+
                 let _ = self
                     .security_event_repository
                     .store_event(
@@ -3369,6 +3424,7 @@ mod tests {
 
     fn magic_link_input(session_code: Uuid) -> MagicLinkInput {
         MagicLinkInput {
+            provider_link: None,
             realm_name: "test-realm".to_string(),
             email: "user@example.com".to_string(),
             base_url: "https://auth.example".to_string(),
@@ -3419,7 +3475,7 @@ mod tests {
             .unwrap()
             .expect_create_magic_link()
             .times(1)
-            .returning(|_, _, _, _, _, _, _| {
+            .returning(|_, _, _, _, _, _, _, _| {
                 Box::pin(async { Err(CoreError::InternalServerError) })
             });
 

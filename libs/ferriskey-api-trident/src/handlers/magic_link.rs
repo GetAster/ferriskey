@@ -85,6 +85,7 @@ pub async fn send_magic_link(
     state
         .service
         .generate_magic_link(MagicLinkInput {
+            provider_link: None,
             realm_name,
             email: payload.email.clone(),
             base_url,
@@ -192,4 +193,27 @@ pub async fn verify_magic_link(
         axum::Json(response),
     )
         .into_response())
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeclineProviderLinkBody {}
+
+/// Declining a connection grants no authentication authority. JSON is required so
+/// cross-origin forms cannot submit this cookie-bound operation.
+pub async fn decline_provider_link(
+    Path(realm_name): Path<String>,
+    State(state): State<AppState>,
+    cookie: CookieManager,
+    axum::Json(_body): axum::Json<DeclineProviderLinkBody>,
+) -> Result<impl IntoResponse, ApiError> {
+    let session = cookie
+        .get("FERRISKEY_SESSION")
+        .and_then(|c| Uuid::parse_str(c.value()).ok())
+        .ok_or(ferriskey_core::domain::common::entities::app_errors::CoreError::InvalidSession)?;
+    state
+        .service
+        .decline_provider_link(realm_name, session)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

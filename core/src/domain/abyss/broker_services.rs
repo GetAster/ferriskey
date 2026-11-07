@@ -16,7 +16,7 @@ use crate::domain::abyss::identity_provider::broker::{
     BrokerAuthSessionRepository, BrokerCallbackInput, BrokerCallbackOutput, BrokerLoginInput,
     BrokerLoginOutput, BrokerService, BrokeredUserInfo, CreateBrokerAuthSessionRequest,
     CreateIdentityProviderLinkRequest, IdentityProviderLink, IdentityProviderLinkRepository,
-    OAuthClient, OAuthProviderConfig, OAuthTokenResponse,
+    OAuthClient, OAuthProviderConfig, OAuthTokenResponse, ProviderLinkIntent,
 };
 use crate::domain::abyss::identity_provider::{IdentityProvider, IdentityProviderRepository};
 use crate::domain::authentication::entities::{
@@ -227,7 +227,7 @@ where
         idp: &Scoped<IdentityProvider>,
         user_info: &BrokeredUserInfo,
         access_token: Option<&str>,
-    ) -> Result<(User, bool), CoreError> {
+    ) -> Result<(User, bool, Option<ProviderLinkIntent>), CoreError> {
         let realm_id = scope.id();
 
         // 1. Check if user is already linked to this IdP
@@ -255,7 +255,7 @@ where
                     .await?;
             }
 
-            return Ok((user, false));
+            return Ok((user, false, None));
         }
 
         if let Some(email) = &user_info.email
@@ -268,11 +268,29 @@ where
         {
             self.create_idp_link(&user, idp, user_info, access_token)
                 .await?;
-            return Ok((user, false));
+            return Ok((user, false, None));
         }
 
         if idp.get().link_only {
             return Err(CoreError::LinkOnlyUserNotFound);
+        }
+        if let Some(email) = &user_info.email
+            && let Some(user) = self.user_repository.get_by_email(email, realm_id).await?
+        {
+            if !user.enabled || user.is_locked(Utc::now()) {
+                return Err(CoreError::UserDisabled);
+            }
+            let intent = ProviderLinkIntent {
+                user_id: user.id,
+                provider_id: idp.get().id.into(),
+                provider_name: idp.get().alias.clone(),
+                external_id: user_info.subject.clone(),
+                email: user.email.clone().ok_or(CoreError::InvalidRequest)?,
+                given_name: user_info.given_name.clone(),
+                family_name: user_info.family_name.clone(),
+                remember_me: false,
+            };
+            return Ok((user, false, Some(intent)));
         }
 
         // 4. Create new user
@@ -297,7 +315,7 @@ where
         self.create_idp_link(&user, idp, user_info, access_token)
             .await?;
 
-        Ok((user, true))
+        Ok((user, true, None))
     }
 
     /// Creates a link between a user and an identity provider
@@ -450,6 +468,33 @@ fn verify_id_token_against_jwks(
     }
 
     Ok(claims)
+}
+
+fn pending_connection_session(
+    mut original: AuthSession,
+    user_id: Uuid,
+    deadline: DateTime<Utc>,
+) -> Result<AuthSession, CoreError> {
+    if original.expires_at <= Utc::now()
+        || original.authenticated
+        || original.code.is_some()
+        || original.user_id.is_some_and(|id| id != user_id)
+    {
+        return Err(CoreError::InvalidSession);
+    }
+    original.id = crate::domain::common::generate_uuid_v7();
+    original.created_at = Utc::now();
+    original.expires_at = original.expires_at.min(deadline);
+    original.user_id = None;
+    original.code = None;
+    original.authenticated = false;
+    original.user_session_id = None;
+    original.consent_token_hash = None;
+    original.webauthn_challenge = None;
+    original.webauthn_challenge_issued_at = None;
+    // Preserve every request requirement and preference; no authentication
+    // evidence from the old transaction may authorize the pending connection.
+    Ok(original)
 }
 
 // Require one canonical representation, not UUID URNs, braces or compact hex.
@@ -967,12 +1012,85 @@ where
             .await?;
 
         // 8. Find or create user
-        let (user, is_new_user) = self
+        let (user, is_new_user, pending_provider_link) = self
             .find_or_create_user(&scope, &idp, &user_info, Some(&token_response.access_token))
             .await?;
 
         if !user.enabled {
             return Err(CoreError::UserDisabled);
+        }
+
+        if let Some(mut intent) = pending_provider_link {
+            // A new, unbound transaction prevents an older sign-in email or login
+            // action cookie from being reused as consent to connect this provider.
+            let challenge_method = session
+                .code_challenge_method
+                .as_deref()
+                .map(|m| {
+                    m.parse::<CodeChallengeMethod>()
+                        .map_err(|_| CoreError::InvalidRequest)
+                })
+                .transpose()?;
+            let mut pending = AuthSession::new(AuthSessionParams {
+                realm_id: scope.id(),
+                client_id: session.client_id,
+                protocol: AuthProtocol::OpenIdConnect,
+                redirect_uri: session.redirect_uri.clone(),
+                response_type: Some(session.response_type.clone()),
+                scope: Some(session.scope.clone()),
+                state: session.state.clone(),
+                nonce: session.nonce.clone(),
+                user_id: None,
+                code: None,
+                authenticated: false,
+                webauthn_challenge: None,
+                webauthn_challenge_issued_at: None,
+                compass_flow_id: flow_id.as_ref().map(|id| id.0),
+                code_challenge: session.code_challenge.clone(),
+                code_challenge_method: challenge_method,
+                prompt_consent: false,
+                issuer: None,
+                resource: None,
+            });
+            if let Some(original_id) = session.auth_session_id {
+                let original = self
+                    .auth_session_repository
+                    .get_by_session_code(original_id)
+                    .await?
+                    .in_realm(&scope)?
+                    .into_inner();
+                if original.client_id != session.client_id
+                    || original.redirect_uri != session.redirect_uri
+                    || original.state != session.state
+                    || original.nonce != session.nonce
+                    || original.code_challenge != session.code_challenge
+                {
+                    return Err(CoreError::InvalidSession);
+                }
+                pending = pending_connection_session(original, user.id, session.expires_at)?;
+            }
+            pending.expires_at = pending.expires_at.min(session.expires_at);
+            intent.remember_me = pending.remember_me;
+            self.auth_session_repository.create(&pending).await?;
+            self.broker_session_repository
+                .delete(&broker_session)
+                .await?;
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/connect-identity-provider?provider={}",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name,
+                    urlencoding::encode(&intent.provider_name)
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user: false,
+                client_id: client.client_id,
+                browser_session_id: Some(pending.id),
+                required_actions: Vec::new(),
+                second_factor_pending: false,
+                pending_provider_link: Some(intent),
+            });
         }
 
         // 9. Create or update auth session with authorization code
@@ -1063,6 +1181,7 @@ where
                 browser_session_id: Some(*browser_session_id),
                 required_actions: required_actions.clone(),
                 second_factor_pending: *second_factor_pending,
+                pending_provider_link: None,
             });
         }
 
@@ -1080,6 +1199,7 @@ where
                 browser_session_id,
                 required_actions: Vec::new(),
                 second_factor_pending: false,
+                pending_provider_link: None,
             });
         }
 
@@ -1102,6 +1222,7 @@ where
             browser_session_id: None,
             required_actions: Vec::new(),
             second_factor_pending: false,
+            pending_provider_link: None,
         })
     }
 
@@ -1408,6 +1529,120 @@ mod tests {
                 .await,
             Err(CoreError::InvalidIdToken)
         ));
+    }
+
+    #[test]
+    fn connection_proof_preserves_request_context_but_clears_prior_authority() {
+        let (_, mut original) = scope_and_session();
+        let user = Uuid::new_v4();
+        original.user_id = Some(user);
+        original.issuer = Some("https://issuer.example".into());
+        original.resource = Some("https://resource.example".into());
+        original.prompt_consent = true;
+        original.remember_me = true;
+        original.reauth_session_id = Some(Uuid::new_v4());
+        original.user_session_id = Some(Uuid::new_v4());
+        original.consent_token_hash = Some("previous-consent".into());
+        let deadline = Utc::now() + Duration::minutes(2);
+        let pending = pending_connection_session(original.clone(), user, deadline).unwrap();
+        assert_ne!(pending.id, original.id);
+        assert_eq!(pending.issuer, original.issuer);
+        assert_eq!(pending.resource, original.resource);
+        assert_eq!(pending.code_challenge, original.code_challenge);
+        assert_eq!(pending.state, original.state);
+        assert_eq!(pending.nonce, original.nonce);
+        assert!(pending.prompt_consent && pending.remember_me);
+        assert_eq!(pending.reauth_session_id, original.reauth_session_id);
+        assert_eq!(pending.expires_at, deadline);
+        assert!(
+            pending.user_id.is_none()
+                && pending.user_session_id.is_none()
+                && pending.consent_token_hash.is_none()
+        );
+        assert!(pending_connection_session(original.clone(), Uuid::new_v4(), deadline).is_err());
+        original.authenticated = true;
+        assert!(pending_connection_session(original, user, deadline).is_err());
+    }
+
+    #[tokio::test]
+    async fn an_untrusted_email_collision_requests_proof_without_linking_or_creating_an_account() {
+        use crate::domain::{
+            client::ports::{MockClientRepository, MockRedirectUriRepository},
+            common::services::tests::{create_test_realm_with_name, create_test_user},
+            realm::ports::MockRealmRepository,
+            user::ports::MockUserRepository,
+        };
+        use ferriskey_abyss::identity_provider::{
+            IdentityProviderCreationConfig,
+            broker::ports::{MockBrokerAuthSessionRepository, MockIdentityProviderLinkRepository},
+            ports::MockIdentityProviderRepository,
+        };
+        for link_only in [false, true] {
+            let realm = create_test_realm_with_name("test");
+            let user = create_test_user(realm.id);
+            let scope = RealmScope::from_realm(realm.clone());
+            let provider = IdentityProvider::new(IdentityProviderCreationConfig {
+                realm_id: realm.id,
+                alias: "microsoft".into(),
+                provider_id: "oidc".into(),
+                enabled: true,
+                display_name: None,
+                first_broker_login_flow_alias: None,
+                post_broker_login_flow_alias: None,
+                store_token: false,
+                add_read_token_role_on_create: false,
+                trust_email: false,
+                link_only,
+                config: serde_json::from_value(serde_json::json!({})).unwrap(),
+            });
+            let provider = Unscoped::new(provider).in_realm(&scope).unwrap();
+            let mut links = MockIdentityProviderLinkRepository::new();
+            links
+                .expect_get_by_provider_and_external_id()
+                .returning(|_, _| Box::pin(async { Ok(None) }));
+            links.expect_create().never();
+            let mut users = MockUserRepository::new();
+            let found = user.clone();
+            users.expect_get_by_email().returning(move |_, _| {
+                let found = found.clone();
+                Box::pin(async move { Ok(Some(found)) })
+            });
+            users.expect_create_user().never();
+            let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+            let service = BrokerServiceImpl::new(
+                Arc::new(MockRealmRepository::new()),
+                Arc::new(MockIdentityProviderRepository::new()),
+                Arc::new(MockBrokerAuthSessionRepository::new()),
+                Arc::new(links),
+                Arc::new(MockClientRepository::new()),
+                Arc::new(MockRedirectUriRepository::new()),
+                Arc::new(users),
+                Arc::new(MockAuthSessionRepository::new()),
+                Arc::new(NoOAuthRequests),
+                Arc::new(MockLoginAdmissionPort::new()),
+                FlowRecorder::new(sender),
+            );
+            let info = BrokeredUserInfo {
+                subject: "tenant:subject".into(),
+                email: user.email.clone(),
+                email_verified: Some(true),
+                ..Default::default()
+            };
+            let result = service
+                .find_or_create_user(&scope, &provider, &info, None)
+                .await;
+            if link_only {
+                assert!(matches!(result, Err(CoreError::LinkOnlyUserNotFound)));
+            } else {
+                let (found, created, pending) = result.unwrap();
+                assert_eq!(found.id, user.id);
+                assert!(!created);
+                let pending = pending.unwrap();
+                assert_eq!(pending.user_id, user.id);
+                assert_eq!(pending.external_id, info.subject);
+                assert_eq!(pending.email, user.email.unwrap());
+            }
+        }
     }
 
     #[test]
