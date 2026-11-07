@@ -107,7 +107,7 @@ Row 21 is released as `aster-ferriskey-v0.10.2-10` at `f6b857789b2d8f7be4c102927
 
 | 22 | `fix/broker-resumed-transaction` | Preserve original nonce, PKCE, scope, response type and state when a provider login resumes the saved browser authorization transaction. Send the saved nonce upstream; retain strict callback comparisons and log field-only mismatch reasons plus verified claim-presence/branch diagnostics. Topic `3d01a017`, integrated `9b6d6337`. | Not submitted. |
 
-Row 22 is released as `aster-ferriskey-v0.10.2-11` at `9b6d633706828f5ad4777d6bf03d056f5ca3b869` after exact-pin host all-features validation: 166 passed, zero failed, two ignored, including database tests. Deployment and the owner’s Microsoft retry remain pending. The owner's Microsoft sign-in exposed a release-10 failure: minimal provider-link query parameters discarded original nonce/PKCE in the broker record, so account-connection confirmation returned `401 invalid_session`. Validation: 57 broker unit tests and two actual-router PostgreSQL tests passed. Both regression tests fail against release 10 on the lost nonce; a baseline probe also reproduced the exact callback error. Tests cover a trusted provider omitting `email_verified` entering pending confirmation, and verified automatic linking preserving nonce and enforcing PKCE at code exchange. Independent implementation and diagnostic-privacy review passed. No schema, endpoint or configuration changes. Browser-friendly callback errors are handled separately by aster-idp, preserving a terminal error when transaction context is lost.
+Row 22 is released as `aster-ferriskey-v0.10.2-11` at `9b6d633706828f5ad4777d6bf03d056f5ca3b869` after exact-pin host all-features validation: 166 passed, zero failed, two ignored, including database tests. Deployment and the owner’s real Microsoft retry succeeded; see the release-11 live verification below. The owner's Microsoft sign-in exposed a release-10 failure: minimal provider-link query parameters discarded original nonce/PKCE in the broker record, so account-connection confirmation returned `401 invalid_session`. Validation: 57 broker unit tests and two actual-router PostgreSQL tests passed. Both regression tests fail against release 10 on the lost nonce; a baseline probe also reproduced the exact callback error. Tests cover a trusted provider omitting `email_verified` entering pending confirmation, and verified automatic linking preserving nonce and enforcing PKCE at code exchange. Independent implementation and diagnostic-privacy review passed. No schema, endpoint or configuration changes. Browser-friendly callback errors are handled separately by aster-idp, preserving a terminal error when transaction context is lost.
 
 Planned patches are not listed here until they land.
 
@@ -164,3 +164,17 @@ The deployment agent reported `aster-ferriskey-v0.10.2-10` live on
 These are deployment-agent observations, distinct from the automated regression
 coverage above. Host totals are 162 passed, zero failed, two ignored for releases
 8 and 9, and 163 passed, zero failed, two ignored for release 10.
+
+## Live verification for release 11
+
+The deployment agent confirmed the owner's real personal Microsoft sign-in on
+release 11. Diagnostics reported `email_verified_present=false` and
+`branch=pending_connection`. The purpose-bound email arrived, and opening it
+connected Microsoft to the existing account at 23:12 UTC on 2026-11-07. The agent
+also confirmed Google had automatically linked the same account at 20:34 UTC.
+This closes the previously pending real Microsoft and end-to-end connection
+confirmation checks. Real Apple sign-in remains unverified.
+
+A separate `client_not_found` was traced to the host login screen opening without
+an authorization transaction and fixed in aster-idp `f5a352a`; it was not a further
+Ferriskey broker defect.
