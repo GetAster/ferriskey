@@ -1522,6 +1522,22 @@ where
             _ => Err(CoreError::WebAuthnMissingChallenge),
         }?;
 
+        // The action bearer identifies the account, but does not prove that the
+        // signing credential belongs to it. The challenge may have been created
+        // under a different bearer: bind the verified credential explicitly.
+        if self
+            .credential_repository
+            .get_webauthn_credential_by_credential_id_and_user(
+                auth_result.cred_id().as_slice(),
+                &user,
+            )
+            .await
+            .map_err(|_| CoreError::InternalServerError)?
+            .is_none()
+        {
+            return Err(CoreError::WebAuthnUnknownCredential);
+        }
+
         if auth_result.needs_update() {
             let _ = self
                 .credential_repository
@@ -6410,6 +6426,60 @@ mod tests {
             credential_id,
             credential,
             assertion,
+        }
+    }
+
+    #[tokio::test]
+    async fn legacy_passkey_action_rejects_a_valid_signature_for_another_bearer_account() {
+        for omit_handle in [false, true] {
+            let realm = create_test_realm_with_name("legacy-passkey-owner");
+            let victim = create_test_user_with_email(&realm, "victim@example.com");
+            let PasskeyAssertionFixture {
+                mut builder,
+                session_code,
+                credential_id,
+                mut assertion,
+                ..
+            } = passkey_assertion_fixture(&realm, victim.id);
+            if omit_handle {
+                assertion.response.user_handle = None;
+            }
+            let victim_id = victim.id;
+            let resolved = victim.clone();
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_get_by_id()
+                .withf(move |id| *id == victim_id)
+                .returning(move |_| {
+                    let user = resolved.clone();
+                    Box::pin(async move { Ok(Unscoped::new(user)) })
+                });
+            Arc::get_mut(&mut builder.credential_repo)
+                .unwrap()
+                .expect_get_webauthn_credential_by_credential_id_and_user()
+                .withf(move |id, user| id == credential_id.as_slice() && user.get().id == victim_id)
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(None) }));
+            expect_no_authorization_code(&mut builder);
+            let recorded = builder.recorded_evidence.clone();
+            let result = builder
+                .build()
+                .webauthn_public_key_authenticate(
+                    Identity::User(victim),
+                    WebAuthnPublicKeyAuthenticateInput {
+                        realm_name: realm.name,
+                        session_code: session_code.to_string(),
+                        webapp_base_url: TEST_WEBAPP_URL.into(),
+                        rp_info: passkey_rp_info(),
+                        credential: assertion,
+                    },
+                )
+                .await;
+            assert!(matches!(result, Err(CoreError::WebAuthnUnknownCredential)));
+            assert!(
+                recorded.lock().unwrap().is_empty(),
+                "another account must not gain passkey evidence"
+            );
         }
     }
 
