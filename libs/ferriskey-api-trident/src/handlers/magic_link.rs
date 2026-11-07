@@ -73,10 +73,13 @@ pub async fn send_magic_link(
     cookie: CookieManager,
     ValidateJson(payload): ValidateJson<SendMagicLinkRequest>,
 ) -> Result<Response<SendMagicLinkResponse>, ApiError> {
-    debug!(
-        "Generating magic link for email: {} in realm: {}",
-        payload.email, realm_name
-    );
+    state
+        .service
+        .check_email_ip(
+            &realm_name,
+            context.ip_address.as_deref().and_then(|ip| ip.parse().ok()),
+        )
+        .await?;
 
     let session_code = cookie
         .get("FERRISKEY_SESSION")
@@ -94,7 +97,7 @@ pub async fn send_magic_link(
         })
         .await?;
 
-    debug!("Magic link created for email: {}", payload.email);
+    debug!("Magic link request processed");
 
     Ok(Response::OK(SendMagicLinkResponse {
         message: "Magic link sent successfully. Check your email.".to_string(),

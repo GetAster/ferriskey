@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+sha2 = "0.10.9"
 maskass = { path = "../maskass" }
 chrono = { version = "0.4.43", features = ["serde"] }
 rand = "0.10.3"

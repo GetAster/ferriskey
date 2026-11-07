@@ -733,6 +733,14 @@ impl CoreService for ApplicationService {
 }
 
 impl ApplicationService {
+    pub async fn check_email_ip(
+        &self,
+        realm_name: &str,
+        ip: Option<std::net::IpAddr>,
+    ) -> Result<(), CoreError> {
+        self.trident_service.check_email_ip(realm_name, ip).await
+    }
+
     /// Generates the realm's `next` signing key, of the type its
     /// `default_signing_algorithm` setting asks for, so it can be published in
     /// the JWKS before it signs anything. Needs the right to update the realm.

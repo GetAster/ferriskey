@@ -221,6 +221,7 @@ impl From<CoreError> for ApiError {
             CoreError::ClientIdAlreadyExists(client_id) => {
                         Self::Conflict(CoreError::ClientIdAlreadyExists(client_id).to_string().into())
                     }
+            CoreError::EmailRateLimited { retry_after_seconds } => Self::EmailTooManyRequests { retry_after_seconds },
             CoreError::ServiceUnavailable(msg) => Self::ServiceUnavailable(msg.into()),
             CoreError::RecoveryCodeGenError(msg) => Self::BadRequest(msg.into()),
             CoreError::RecoveryCodeBurnError(msg) => Self::BadRequest(msg.into()),

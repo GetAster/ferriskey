@@ -44,9 +44,16 @@ pub async fn resend_verification_email_handler(
     context: RequestContext,
     Extension(identity): Extension<Identity>,
 ) -> Result<Response<ResendVerificationEmailResponse>, ApiError> {
+    state
+        .service
+        .check_email_ip(
+            &realm_name,
+            context.ip_address.as_deref().and_then(|ip| ip.parse().ok()),
+        )
+        .await?;
     let user_id = identity.id();
 
-    state
+    let delivery = state
         .service
         .email_verification_service
         .send_verification_email(
@@ -55,7 +62,17 @@ pub async fn resend_verification_email_handler(
             verification_base_url,
             context.user_agent,
         )
-        .await?;
+        .await;
+    // Recipient/realm throttling must look exactly like a successful send.
+    match delivery {
+        Ok(())
+        | Err(
+            ferriskey_core::domain::common::entities::app_errors::CoreError::EmailRateLimited {
+                ..
+            },
+        ) => {}
+        Err(error) => return Err(error.into()),
+    }
 
     Ok(Response::OK(ResendVerificationEmailResponse {
         message: "Verification email sent successfully".to_string(),

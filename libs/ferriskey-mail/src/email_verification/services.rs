@@ -1,3 +1,4 @@
+use ferriskey_domain::common::email_limits::{EmailSendLimits, recipient_hash_hex};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -55,6 +56,7 @@ where
     pub(crate) realm_repository: Arc<RR>,
     pub(crate) user_required_action_repository: Arc<URA>,
     pub(crate) email_port: Arc<ES>,
+    pub(crate) email_limits: Arc<EmailSendLimits>,
     pub(crate) smtp_config_repository: Arc<SC>,
     pub(crate) email_template_repository: Arc<ETR>,
     pub(crate) template_renderer: Arc<TR>,
@@ -83,6 +85,7 @@ where
             realm_repository: self.realm_repository.clone(),
             user_required_action_repository: self.user_required_action_repository.clone(),
             email_port: self.email_port.clone(),
+            email_limits: self.email_limits.clone(),
             smtp_config_repository: self.smtp_config_repository.clone(),
             email_template_repository: self.email_template_repository.clone(),
             template_renderer: self.template_renderer.clone(),
@@ -125,12 +128,18 @@ where
             realm_repository,
             user_required_action_repository,
             email_port,
+            email_limits: Arc::new(EmailSendLimits::default()),
             smtp_config_repository,
             email_template_repository,
             template_renderer,
             webhook_repository,
             security_event_repository,
         }
+    }
+
+    pub fn with_email_limits(mut self, limits: Arc<EmailSendLimits>) -> Self {
+        self.email_limits = limits;
+        self
     }
 
     async fn render_email_template(
@@ -228,6 +237,16 @@ where
                     "Email delivery is not configured for this realm".to_string(),
                 )
             })?;
+
+        if let Err(limit) = self.email_limits.reserve(realm.id.into(), user_email) {
+            let _ = self.security_event_repository.store_event(
+                SecurityEvent::without_actor(realm.id, SecurityEventType::EmailNotSent, EventStatus::Failure)
+                    .with_details(serde_json::json!({"reason": "email_rate_limited", "dimension": limit.dimension, "recipient_hash": recipient_hash_hex(user_email), "email_type": "verification"}))
+            ).await.inspect_err(|e| warn!("Failed to record email limit event: {e}"));
+            return Err(CoreError::EmailRateLimited {
+                retry_after_seconds: limit.retry_after_seconds,
+            });
+        }
 
         // Generate token (UUID v4 as raw token, SHA-256 hash for storage)
         let raw_token = Uuid::new_v4().to_string();
@@ -871,6 +890,65 @@ mod tests {
 
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), CoreError::InvalidRealm));
+    }
+
+    #[tokio::test]
+    async fn limited_verification_creates_no_token_and_records_only_a_recipient_hash() {
+        let mut realm = test_realm();
+        let mut settings = RealmSetting::new(realm.id, Some("RS256".into()));
+        settings.email_verification_template_id = Some(Uuid::new_v4());
+        realm.settings = Some(settings);
+        let user = test_user(&realm);
+        let smtp = test_smtp_config(&realm);
+        let limits = Arc::new(EmailSendLimits::default());
+        limits
+            .reserve(realm.id.into(), user.email.as_deref().unwrap())
+            .unwrap();
+        let mut realms = MockRealmRepository::new();
+        realms.expect_get_by_name().returning(move |_| {
+            let realm = realm.clone();
+            Box::pin(async move { Ok(Some(realm)) })
+        });
+        let mut users = MockUserRepository::new();
+        let user_copy = user.clone();
+        users.expect_get_by_id().returning(move |_| {
+            let user = user_copy.clone();
+            Box::pin(async move { Ok(Unscoped::new(user)) })
+        });
+        let mut smtp_repo = MockSmtpConfigRepository::new();
+        smtp_repo.expect_get_by_realm_id().returning(move |_| {
+            let smtp = smtp.clone();
+            Box::pin(async move { Ok(Some(smtp)) })
+        });
+        let mut events = MockSecurityEventRepository::new();
+        events
+            .expect_store_event()
+            .times(1)
+            .withf(|event| {
+                let details = event.details.as_ref().unwrap();
+                details["reason"] == "email_rate_limited"
+                    && details["recipient_hash"].as_str().unwrap().len() == 64
+                    && !details.to_string().contains("@")
+                    && event.actor_id.is_none()
+            })
+            .returning(|_| Box::pin(async { Ok(()) }));
+        // No token, template rendering or outbound mail may be attempted.
+        let service = build_service(
+            MockEmailVerificationTokenRepository::new(),
+            users,
+            realms,
+            MockUserRequiredActionRepository::new(),
+            MockEmailPort::new(),
+            smtp_repo,
+            MockEmailTemplateRepository::new(),
+            MockWebhookRepository::new(),
+            events,
+        )
+        .with_email_limits(limits);
+        let result = service
+            .send_verification_email(user.id, "test".into(), "https://auth.example".into(), None)
+            .await;
+        assert!(matches!(result, Err(CoreError::EmailRateLimited { .. })));
     }
 
     #[tokio::test]

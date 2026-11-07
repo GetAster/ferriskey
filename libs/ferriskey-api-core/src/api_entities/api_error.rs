@@ -120,6 +120,9 @@ pub enum ApiError {
         error: Cow<'static, str>,
         error_description: Cow<'static, str>,
     },
+    EmailTooManyRequests {
+        retry_after_seconds: u32,
+    },
     OAuthTooManyRequests {
         error: Cow<'static, str>,
         error_description: Cow<'static, str>,
@@ -173,6 +176,11 @@ impl ApiError {
             } => Self::OAuthUnauthorized {
                 error,
                 error_description,
+            },
+            Self::EmailTooManyRequests {
+                retry_after_seconds,
+            } => Self::EmailTooManyRequests {
+                retry_after_seconds,
             },
             Self::OAuthTooManyRequests {
                 error,
@@ -435,6 +443,13 @@ impl IntoResponse for ApiError {
                 )
                     .into_response();
             }
+            ApiError::EmailTooManyRequests {
+                retry_after_seconds,
+            } => {
+                return (StatusCode::TOO_MANY_REQUESTS,
+                    [(header::RETRY_AFTER, retry_after_seconds.to_string())],
+                    Json(serde_json::json!({"message": "Too many email requests. Please try again later.", "reason": "email_rate_limited"}))).into_response();
+            }
             ApiError::OAuthTooManyRequests {
                 error,
                 error_description,
@@ -511,6 +526,21 @@ mod tests {
 
     async fn body_of(error: ApiError) -> Value {
         serialized_error(error.into_response()).await
+    }
+
+    #[tokio::test]
+    async fn email_limit_has_retry_after_and_a_screen_message() {
+        let response = ApiError::from(
+            ferriskey_core::domain::common::entities::app_errors::CoreError::EmailRateLimited {
+                retry_after_seconds: 60,
+            },
+        )
+        .into_response();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[header::RETRY_AFTER], "60");
+        let body = serialized_error(response).await;
+        assert_eq!(body["reason"], "email_rate_limited");
+        assert!(body["message"].as_str().unwrap().contains("try again"));
     }
 
     #[tokio::test]

@@ -247,6 +247,8 @@ pub enum CoreError {
 
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
+    #[error("Email sending is temporarily limited")]
+    EmailRateLimited { retry_after_seconds: u32 },
 
     #[error("Authorization code storage failed")]
     AuthorizationCodeStorageFailed,
@@ -552,6 +554,7 @@ impl CoreError {
             CoreError::CreateClientError => "create_client_error",
             CoreError::ClientIdAlreadyExists(_) => "client_id_already_exists",
             CoreError::ServiceUnavailable(_) => "service_unavailable",
+            CoreError::EmailRateLimited { .. } => "email_rate_limited",
             CoreError::AuthorizationCodeStorageFailed => "authorization_code_storage_failed",
             CoreError::ProtocolNotSupported(_) => "protocol_not_supported",
             CoreError::WebAuthnMissingChallenge => "webauthn_missing_challenge",

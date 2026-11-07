@@ -48,6 +48,13 @@ pub async fn forgot_password(
     cookie: CookieManager,
     ValidateJson(payload): ValidateJson<ForgotPasswordRequest>,
 ) -> Result<Response<ForgotPasswordResponse>, ApiError> {
+    state
+        .service
+        .check_email_ip(
+            &realm_name,
+            context.ip_address.as_deref().and_then(|ip| ip.parse().ok()),
+        )
+        .await?;
     let session_code = cookie
         .get("FERRISKEY_SESSION")
         .map(|c| c.value().to_string());
