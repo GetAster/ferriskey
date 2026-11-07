@@ -47,6 +47,8 @@ fn default_response_type() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, IntoParams)]
 #[into_params(parameter_in = Query)]
 pub struct BrokerCallbackQuery {
+    #[serde(default)]
+    pub user: Option<String>,
     /// Authorization code from IdP
     #[serde(default)]
     pub code: Option<String>,

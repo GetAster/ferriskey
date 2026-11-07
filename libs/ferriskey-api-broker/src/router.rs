@@ -19,7 +19,7 @@ pub fn broker_routes(state: AppState, root_path: &str) -> Router<AppState> {
         )
         .route(
             &format!("{root_path}/realms/{{realm_name}}/broker/{{alias}}/endpoint"),
-            get(broker_callback),
+            get(broker_callback).post(super::handlers::callback::broker_callback_post),
         )
         .with_state(state)
 }

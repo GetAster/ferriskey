@@ -14,6 +14,10 @@ pub struct OAuthProviderConfig {
     /// OAuth client secret
     pub client_secret: String,
 
+    /// Apple signing metadata. Only the key path is stored, never the private key.
+    #[serde(default)]
+    pub apple: Option<AppleSigningConfig>,
+
     /// Authorization endpoint URL
     pub authorization_url: String,
 
@@ -40,6 +44,39 @@ pub struct OAuthProviderConfig {
     pub issuer: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppleSigningConfig {
+    pub team_id: String,
+    pub key_id: String,
+    pub key_file: String,
+}
+
+impl OAuthProviderConfig {
+    pub fn validate(&self) -> Result<(), CoreError> {
+        if let Some(apple) = &self.apple {
+            // A signing key must never be usable with an administrator-supplied
+            // token endpoint or arbitrary issuer/audience.
+            if self.issuer.as_deref() != Some("https://appleid.apple.com")
+                || self.authorization_url != "https://appleid.apple.com/auth/authorize"
+                || self.token_url != "https://appleid.apple.com/auth/token"
+                || self.jwks_url.as_deref() != Some("https://appleid.apple.com/auth/keys")
+                || self.userinfo_url.is_some()
+                || self.use_pkce == Some(true)
+                || apple.team_id.is_empty()
+                || apple.key_id.is_empty()
+                || !std::path::Path::new(&apple.key_file).is_absolute()
+                || self.client_id.is_empty()
+                || !self.client_secret.is_empty()
+            {
+                return Err(CoreError::InvalidProviderConfiguration(
+                    "Invalid Apple provider configuration".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 fn deserialize_scopes<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -60,13 +97,22 @@ where
 impl TryFrom<serde_json::Value> for OAuthProviderConfig {
     type Error = CoreError;
 
-    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
-        serde_json::from_value(value).map_err(|e| {
+    fn try_from(mut value: serde_json::Value) -> Result<Self, Self::Error> {
+        if value.get("apple").is_some_and(serde_json::Value::is_object) {
+            if let Some(object) = value.as_object_mut() {
+                object
+                    .entry("client_secret")
+                    .or_insert_with(|| serde_json::Value::String(String::new()));
+            }
+        }
+        let config: Self = serde_json::from_value(value).map_err(|e| {
             CoreError::InvalidProviderConfiguration(format!(
                 "Failed to parse OAuth provider config: {}",
                 e
             ))
-        })
+        })?;
+        config.validate()?;
+        Ok(config)
     }
 }
 
@@ -87,9 +133,15 @@ impl TryFrom<IdentityProviderConfig> for OAuthProviderConfig {
         let client_id = config.client_id.ok_or_else(|| {
             CoreError::InvalidProviderConfiguration("Missing client_id".to_string())
         })?;
-        let client_secret = config.client_secret.ok_or_else(|| {
-            CoreError::InvalidProviderConfiguration("Missing client_secret".to_string())
-        })?;
+        let client_secret = match config.client_secret {
+            Some(secret) => secret.expose().clone(),
+            None if extra.get("apple").is_some_and(serde_json::Value::is_object) => String::new(),
+            None => {
+                return Err(CoreError::InvalidProviderConfiguration(
+                    "Missing client_secret".into(),
+                ));
+            }
+        };
 
         extra.insert(
             "client_id".to_string(),
@@ -97,7 +149,7 @@ impl TryFrom<IdentityProviderConfig> for OAuthProviderConfig {
         );
         extra.insert(
             "client_secret".to_string(),
-            serde_json::Value::String(client_secret.expose().clone()),
+            serde_json::Value::String(client_secret),
         );
 
         OAuthProviderConfig::try_from(serde_json::Value::Object(extra))
@@ -154,6 +206,8 @@ pub struct BrokerLoginOutput {
 /// Input for broker callback handling
 #[derive(Debug, Clone)]
 pub struct BrokerCallbackInput {
+    /// First-authorization profile JSON, used only by the Apple provider.
+    pub user: Option<String>,
     /// Realm name
     pub realm_name: String,
 
@@ -324,6 +378,21 @@ mod tests {
         );
         assert_eq!(config.scopes, vec!["openid", "email", "profile"]);
         assert_eq!(config.use_pkce, Some(true));
+    }
+
+    #[test]
+    fn absent_secret_is_only_permitted_for_a_valid_apple_configuration() {
+        for apple in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!("apple"),
+        ] {
+            let value = serde_json::json!({"client_id":"id", "authorization_url":"https://example.com", "token_url":"https://example.com", "scopes":[], "apple":apple});
+            assert!(OAuthProviderConfig::try_from(value.clone()).is_err());
+            let config: IdentityProviderConfig = serde_json::from_value(value).unwrap();
+            assert!(OAuthProviderConfig::try_from(config).is_err());
+        }
+        assert!(OAuthProviderConfig::try_from(serde_json::json!({"client_id":"id", "authorization_url":"https://example.com", "token_url":"https://example.com", "scopes":[]})).is_err());
     }
 
     #[test]
