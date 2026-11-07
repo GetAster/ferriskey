@@ -53,6 +53,10 @@ Row 10 is published on the patched branch at `b6b51c55af2f5e37a5e457474427775e0c
 
 Migration is opt-in: drain login traffic, establish replacement access, explicitly remove obsolete password hashes/password-update actions, enable the policy, then restart/resume. Existing master access is unchanged. Old email links without delivery-address snapshots require resend; no migration invents verified contact or deletes passwords. See `docs/human-login-browser-contract.md` on the patched branch.
 
+| 11 | `feat/optional-passkey-v0.10.2` | Optional passkey offer after verified email/social login, protected transaction-only skip, discoverable enrollment and account-bound named assertions, atomic one-use WebAuthn challenges with session/age checks, partial profile-update preservation, and template-derived email subjects. Based on row 10 integrated `b6b51c55`; topic `3726af25`, integrated `01aa97d1`. | Not submitted. |
+
+Row 11 is published on the patched branch at `01aa97d11c24b67cc05db994a76e2433a6637e16`, awaiting exact-revision aster-idp validation before release tagging. Validation: core 1,152 passed (174 ignored), mail 55, policy 31, explicit PostgreSQL concurrent challenge consumption 1, and API regressions 7 (optional offer/skip/replay, partial admin update, signup, email continuation/address binding, root-path compatibility). Independent review blockers were fixed and re-reviewed. No schema migration or configuration key is added; `POST /login-actions/skip` is the sole new route. The offer is computed after mandatory actions and never stored on the account; mandatory passkey actions cannot be skipped. Old non-discoverable credentials still work with named sign-in. Reimport existing MJML templates to recover titles that the former importer discarded. Live browser rerun remains pending, including the previously unexplained same-browser request-options refusal.
+
 Planned patches are not listed here until they land.
 
 ## Development browser verification for release -3
