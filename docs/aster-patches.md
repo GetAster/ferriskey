@@ -17,7 +17,7 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-4` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `01aa97d11c24b67cc05db994a76e2433a6637e16`. This release adds the optional passkey offer and browser ceremony repairs (row 11). Before tagging, aster-idp passed 154 tests against this exact revision (2 real-binary smoke tests ignored). Deployment and live browser rerun have been handed to the aster-idp deployment agent and are pending confirmation.
+`aster-ferriskey-v0.10.2-4` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `01aa97d11c24b67cc05db994a76e2433a6637e16`. This release adds the optional passkey offer and browser ceremony repairs (row 11). Before tagging, aster-idp passed 154 tests against this exact revision (2 real-binary smoke tests ignored). The deployment agent reports it live at `https://auth.getaster.now` inside aster-idp `67cd793`, image digest `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. Persistent-Chrome/CDP browser verification with an emulated authenticator passed the optional offer, skip/re-offer, enrollment, SSO, discoverable/named sign-in, same-browser reauthentication and mandatory-action refusal journeys.
 
 Previous release: `aster-ferriskey-v0.10.2-3` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `b6b51c55af2f5e37a5e457474427775e0c108c03`. This release adds opt-in passwordless realm policy and human browser login continuation (row 10). Before tagging, aster-idp's full suite passed 154 tests against this exact revision (2 real-binary smoke tests remained ignored). Deployed at `https://auth.getaster.now` inside aster-idp `a9e77e3`, image digest `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. The public API confirms passwordless mode on realm `aster` and off on `master`; the console was rebuilt from this tag.
 
@@ -26,7 +26,7 @@ Earlier release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, pub
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-4` | `01aa97d1` | Deployment pending confirmation. |
+| `aster-ferriskey-v0.10.2-4` | `01aa97d1` | aster-idp `67cd793`: `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. |
 | `aster-ferriskey-v0.10.2-3` | `b6b51c55` | aster-idp `a9e77e3`: `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. |
 | `aster-ferriskey-v0.10.2-2` | `4e3781da` | Embedded in deployed aster-idp `54c8cf0`; see the aster-idp deployment record for its image digest. |
 | `aster-ferriskey-v0.10.2-1` | `2508c406` | Not published. Image IDs: api `sha256:66ea5e2ea364e8fe7ab03e61c06a4c64c94e7dded46eb66c726a51d61441e7c5`, webapp `sha256:25d43e942ccb8b6becfcfcc326da79f9aeb92fa4414c9176b13d0bcfe2521b89` |
@@ -58,7 +58,7 @@ Migration is opt-in: drain login traffic, establish replacement access, explicit
 
 | 11 | `feat/optional-passkey-v0.10.2` | Optional passkey offer after verified email/social login, protected transaction-only skip, discoverable enrollment and account-bound named assertions, atomic one-use WebAuthn challenges with session/age checks, partial profile-update preservation, and template-derived email subjects. Based on row 10 integrated `b6b51c55`; topic `3726af25`, integrated `01aa97d1`. | Not submitted. |
 
-Row 11 is published on the patched branch at `01aa97d11c24b67cc05db994a76e2433a6637e16`, released as `aster-ferriskey-v0.10.2-4` after exact-revision aster-idp validation: 154 passed, zero failed, two real-binary smoke tests ignored across 17 test binaries (exit 0). Validation: core 1,152 passed (174 ignored), mail 55, policy 31, explicit PostgreSQL concurrent challenge consumption 1, and API regressions 7 (optional offer/skip/replay, partial admin update, signup, email continuation/address binding, root-path compatibility). Independent review blockers were fixed and re-reviewed. No schema migration or configuration key is added; `POST /login-actions/skip` is the sole new route. The offer is computed after mandatory actions and never stored on the account; mandatory passkey actions cannot be skipped. Old non-discoverable credentials still work with named sign-in. Reimport existing MJML templates to recover titles that the former importer discarded. Live browser rerun remains pending, including the previously unexplained same-browser request-options refusal.
+Row 11 is published on the patched branch at `01aa97d11c24b67cc05db994a76e2433a6637e16`, released as `aster-ferriskey-v0.10.2-4` after exact-revision aster-idp validation: 154 passed, zero failed, two real-binary smoke tests ignored across 17 test binaries (exit 0). Validation: core 1,152 passed (174 ignored), mail 55, policy 31, explicit PostgreSQL concurrent challenge consumption 1, and API regressions 7 (optional offer/skip/replay, partial admin update, signup, email continuation/address binding, root-path compatibility). Independent review blockers were fixed and re-reviewed. No schema migration or configuration key is added; `POST /login-actions/skip` is the sole new route. The offer is computed after mandatory actions and never stored on the account; mandatory passkey actions cannot be skipped. Old non-discoverable credentials still work with named sign-in. Reimport existing MJML templates to recover titles that the former importer discarded. The deployment agent subsequently verified these browser journeys on release -4; the previously unexplained same-browser request-options refusal did not recur.
 
 Planned patches are not listed here until they land.
 
@@ -74,3 +74,24 @@ the email-verification continuation screen remain unverified by the available
 browser tools; their server paths have automated regression coverage. The new
 human screens still need an optional passkey-enrollment entry point; enrollment
 must not silently become mandatory for new users.
+
+## Development browser verification for release -4
+
+The deployment agent reported successful optional enrollment and decline/re-offer,
+SSO reuse, username-free and named passkey sign-in, same-browser `prompt=login`,
+and mandatory passkey refusal (`403 action_required`) followed by successful
+second enrollment. New credentials were discoverable. Reimported templates
+produced the subject "Your Aster sign-in link". Evidence is recorded in
+`_internal/docs/agentIdentity/261107_human-screens-evidence.md`, third pass.
+These checks used persistent Google Chrome over CDP with an emulated authenticator;
+real-device acceptance remains the owner's check. Synthetic authorization requests
+reached the callback with code, original state and issuer; the owner-login callback
+then returned 400 because there was no matching application transaction. These
+runs therefore prove IdP completion, not a complete owner-login application journey.
+
+Two non-blocking diagnostic follow-ups remain: distinguish authenticator counter
+regression from a bad-challenge error in the browser, and avoid warning when an
+optional enrollment has no stored ConfigurePasskey action to remove. Counter
+regressions in the test harness were corrected by saving its state after each
+assertion; the server correctly refused the older counter. The separate email
+verification/continue browser path and AgentMail inbox delivery remain unverified.
