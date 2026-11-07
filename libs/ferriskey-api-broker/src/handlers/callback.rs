@@ -1,4 +1,5 @@
 use axum::{
+    Form,
     extract::{Path, Query, State},
     http::{
         HeaderValue, StatusCode,
@@ -56,10 +57,42 @@ pub async fn broker_callback(
     context: RequestContext,
     Query(params): Query<BrokerCallbackQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
+    finish_callback(
+        realm_name, alias, state, base_url, webapp_url, context, params,
+    )
+    .await
+}
+
+/// Apple returns a form POST. State and the exchanged ID token remain the
+/// authority; a form's email or id_token never replaces verified token claims.
+pub async fn broker_callback_post(
+    Path((realm_name, alias)): Path<(String, String)>,
+    State(state): State<AppState>,
+    FullUrl(_, base_url): FullUrl,
+    WebappUrl(webapp_url): WebappUrl,
+    context: RequestContext,
+    Form(params): Form<BrokerCallbackQuery>,
+) -> Result<impl IntoResponse, ApiError> {
+    finish_callback(
+        realm_name, alias, state, base_url, webapp_url, context, params,
+    )
+    .await
+}
+
+async fn finish_callback(
+    realm_name: String,
+    alias: String,
+    state: AppState,
+    base_url: String,
+    webapp_url: String,
+    context: RequestContext,
+    params: BrokerCallbackQuery,
+) -> Result<axum::response::Response, ApiError> {
     let root_scoped_base_url = format!("{base_url}{}", state.args.server.root_path);
     let result = match state
         .service
         .handle_callback(BrokerCallbackInput {
+            user: params.user,
             realm_name: realm_name.clone(),
             alias,
             code: params.code,

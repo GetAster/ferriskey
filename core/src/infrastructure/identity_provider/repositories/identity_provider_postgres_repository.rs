@@ -45,7 +45,9 @@ fn config_value_in(key: &str, values: &str) -> SimpleExpr {
 fn incomplete() -> Condition {
     Condition::any()
         .add(config_value_in("client_id", FALSY))
-        .add(config_value_in("client_secret", FALSY_SECRET))
+        .add(Condition::all()
+            .add(config_value_in("client_secret", FALSY_SECRET))
+            .add(Expr::cust("COALESCE(jsonb_typeof(\"identity_providers\".\"config\" -> 'apple'), '') <> 'object'")))
         .add(config_value_in("authorization_url", FALSY))
         .add(config_value_in("token_url", FALSY))
 }

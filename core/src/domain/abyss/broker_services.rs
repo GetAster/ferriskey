@@ -197,6 +197,10 @@ where
             urlencoding::encode(broker_state),
         );
 
+        if config.apple.is_some() {
+            url.push_str("&response_mode=form_post");
+        }
+
         // Add scopes
         if !scopes.is_empty() {
             url.push_str(&format!("&scope={}", urlencoding::encode(&scopes)));
@@ -724,7 +728,11 @@ where
             &callback_url,
             &broker_state,
             code_challenge.as_deref(),
-            input.nonce.as_deref(),
+            if oauth_config.apple.is_some() {
+                Some(&broker_state)
+            } else {
+                input.nonce.as_deref()
+            },
         );
 
         Ok(BrokerLoginOutput {
@@ -861,6 +869,7 @@ where
         .collect::<Vec<_>>();
         let idp_error = (!idp_error.is_empty()).then(|| idp_error.join("&"));
 
+        let client_secret = provider_client_secret(&oauth_config).await?;
         let cred_start = Utc::now();
         let token_response = match self
             .oauth_client
@@ -869,7 +878,7 @@ where
                 code,
                 &callback_url,
                 &oauth_config.client_id,
-                &oauth_config.client_secret,
+                &client_secret,
                 session.code_verifier.as_deref(),
             )
             .await
@@ -902,9 +911,17 @@ where
         };
 
         // 7. Extract user info from tokens
-        let user_info = self
-            .extract_user_info(&oauth_config, &token_response, session.nonce.as_deref())
+        let mut user_info = self
+            .extract_user_info(&oauth_config, &token_response, if oauth_config.apple.is_some() {
+                Some(session.broker_state.as_str())
+            } else {
+                session.nonce.as_deref()
+            })
             .await?;
+
+        if oauth_config.apple.is_some() {
+            apply_apple_profile(&mut user_info, input.user.as_deref())?;
+        }
 
         // 8. Find or create user
         let (user, is_new_user) = self
@@ -1055,10 +1072,21 @@ where
             && config.jwks_url.is_some()
             && config.issuer.is_some()
         {
-            let claims = self
+            let mut claims = self
                 .verify_id_token(id_token, config, expected_nonce)
                 .await?;
 
+            if config.apple.is_some() {
+                // Apple may encode this claim as a JSON string. Only the signed
+                // token establishes email ownership, never the callback form.
+                if let Some(value) = claims["email_verified"].as_str() {
+                    claims["email_verified"] = match value {
+                        "true" => serde_json::Value::Bool(true),
+                        "false" => serde_json::Value::Bool(false),
+                        _ => return Err(CoreError::InvalidIdToken),
+                    };
+                }
+            }
             return user_info_from_claims(claims);
         }
 
@@ -1076,6 +1104,71 @@ where
     }
 }
 
+async fn provider_client_secret(config: &OAuthProviderConfig) -> Result<String, CoreError> {
+    let Some(apple) = &config.apple else {
+        return Ok(config.client_secret.clone());
+    };
+    config.validate()?;
+    let pem = tokio::fs::read(&apple.key_file).await.map_err(|_| {
+        warn!("Apple signing key is unavailable");
+        CoreError::InvalidProviderConfiguration("Apple signing key is unavailable".into())
+    })?;
+    sign_apple_client_secret(config, &pem, Utc::now().timestamp())
+}
+
+fn sign_apple_client_secret(
+    config: &OAuthProviderConfig,
+    pem: &[u8],
+    now: i64,
+) -> Result<String, CoreError> {
+    config.validate()?;
+    let apple = config.apple.as_ref().ok_or(CoreError::InvalidRequest)?;
+    let key = jsonwebtoken::EncodingKey::from_ec_pem(pem).map_err(|_| {
+        warn!("Apple signing key is invalid");
+        CoreError::InvalidProviderConfiguration("Apple signing key is invalid".into())
+    })?;
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+    header.kid = Some(apple.key_id.clone());
+    // Short-lived assertions avoid retaining a six-month bearer client secret.
+    jsonwebtoken::encode(
+        &header,
+        &serde_json::json!({
+            "iss": apple.team_id, "sub": config.client_id,
+            "aud": "https://appleid.apple.com", "iat": now, "exp": now + 300
+        }),
+        &key,
+    )
+    .map_err(|_| {
+        CoreError::InvalidProviderConfiguration("Apple client assertion signing failed".into())
+    })
+}
+
+fn apply_apple_profile(info: &mut BrokeredUserInfo, user: Option<&str>) -> Result<(), CoreError> {
+    let Some(user) = user else {
+        return Ok(());
+    };
+    // Apple sends this only on first consent. It is untrusted display data;
+    // never copy its email or identifiers over the verified token's claims.
+    if user.len() > 4096 {
+        return Err(CoreError::InvalidRequest);
+    }
+    let profile: serde_json::Value =
+        serde_json::from_str(user).map_err(|_| CoreError::InvalidRequest)?;
+    let name = |key: &str| -> Result<Option<String>, CoreError> {
+        let Some(value) = profile.get("name").and_then(|n| n.get(key)) else {
+            return Ok(None);
+        };
+        let value = value.as_str().ok_or(CoreError::InvalidRequest)?;
+        if value.len() > 256 || value.chars().any(char::is_control) {
+            return Err(CoreError::InvalidRequest);
+        }
+        Ok(Some(value.to_owned()))
+    };
+    info.given_name = name("firstName")?;
+    info.family_name = name("lastName")?;
+    Ok(())
+}
+
 fn may_link_by_email(
     trust_email: bool,
     upstream_email_verified: Option<bool>,
@@ -1091,6 +1184,83 @@ mod tests {
     use chrono::Duration;
     use ferriskey_security::jwt::entities::{JwkMaterial, JwtKeyPair, SigningAlgorithm};
     use uuid::Uuid;
+
+    fn apple_config() -> OAuthProviderConfig {
+        serde_json::json!({
+            "client_id": "com.example.signin",
+            "authorization_url": "https://appleid.apple.com/auth/authorize",
+            "token_url": "https://appleid.apple.com/auth/token",
+            "jwks_url": "https://appleid.apple.com/auth/keys",
+            "issuer": "https://appleid.apple.com",
+            "scopes": ["name", "email"],
+            "apple": {"team_id":"TEAM", "key_id":"KEY", "key_file":"/etc/apple.p8"}
+        })
+        .try_into()
+        .unwrap()
+    }
+
+    #[test]
+    fn apple_assertion_is_es256_short_lived_and_bound_to_services_id() {
+        let config = apple_config();
+        use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+        let key = p256::SecretKey::random(&mut p256::elliptic_curve::rand_core::OsRng);
+        let private = key.to_pkcs8_pem(LineEnding::LF).unwrap();
+        let public = key.public_key().to_public_key_pem(LineEnding::LF).unwrap();
+        let now = Utc::now().timestamp();
+        let token = sign_apple_client_secret(&config, private.as_bytes(), now).unwrap();
+        let header = jsonwebtoken::decode_header(&token).unwrap();
+        assert_eq!(header.alg, jsonwebtoken::Algorithm::ES256);
+        assert_eq!(header.kid.as_deref(), Some("KEY"));
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::ES256);
+        validation.set_audience(&["https://appleid.apple.com"]);
+        validation.set_issuer(&["TEAM"]);
+        let claims = jsonwebtoken::decode::<serde_json::Value>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_ec_pem(public.as_bytes()).unwrap(),
+            &validation,
+        )
+        .unwrap()
+        .claims;
+        assert_eq!(claims["sub"], "com.example.signin");
+        assert_eq!(claims["iat"], now);
+        assert_eq!(claims["exp"], now + 300);
+    }
+
+    #[test]
+    fn apple_signing_cannot_target_another_endpoint_or_issuer() {
+        for field in ["authorization_url", "token_url", "jwks_url", "issuer"] {
+            let mut value = serde_json::to_value(apple_config()).unwrap();
+            value[field] = serde_json::json!("https://attacker.example");
+            assert!(OAuthProviderConfig::try_from(value).is_err(), "{field}");
+        }
+        let mut config = apple_config();
+        config.apple.as_mut().unwrap().key_file = "relative.p8".into();
+        assert!(config.validate().is_err());
+        assert!(sign_apple_client_secret(&apple_config(), b"invalid-key", 1).is_err());
+    }
+
+    #[test]
+    fn apple_first_consent_profile_cannot_override_verified_identity() {
+        let mut info = BrokeredUserInfo {
+            subject: "signed-sub".into(),
+            email: Some("signed@privaterelay.appleid.com".into()),
+            email_verified: Some(true),
+            ..Default::default()
+        };
+        apply_apple_profile(&mut info, Some(r#"{"name":{"firstName":"Ada","lastName":"Lovelace"},"email":"attacker@example.com","sub":"attacker","email_verified":false}"#)).unwrap();
+        assert_eq!(info.subject, "signed-sub");
+        assert_eq!(
+            info.email.as_deref(),
+            Some("signed@privaterelay.appleid.com")
+        );
+        assert_eq!(info.email_verified, Some(true));
+        assert_eq!(info.given_name.as_deref(), Some("Ada"));
+        assert_eq!(info.family_name.as_deref(), Some("Lovelace"));
+        apply_apple_profile(&mut info, None).unwrap();
+        assert_eq!(info.given_name.as_deref(), Some("Ada"));
+        assert!(apply_apple_profile(&mut info, Some("not json")).is_err());
+        assert!(apply_apple_profile(&mut info, Some(&"x".repeat(4097))).is_err());
+    }
 
     const ISSUER: &str = "https://idp.example.com";
     const AUDIENCE: &str = "ferriskey-client";
