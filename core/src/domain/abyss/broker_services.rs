@@ -1017,11 +1017,15 @@ where
 
         // 7. Extract user info from tokens
         let mut user_info = self
-            .extract_user_info(&oauth_config, &token_response, if oauth_config.apple.is_some() {
-                Some(session.broker_state.as_str())
-            } else {
-                session.nonce.as_deref()
-            })
+            .extract_user_info(
+                &oauth_config,
+                &token_response,
+                if oauth_config.apple.is_some() {
+                    Some(session.broker_state.as_str())
+                } else {
+                    session.nonce.as_deref()
+                },
+            )
             .await?;
 
         if oauth_config.apple.is_some() {

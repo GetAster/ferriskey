@@ -29,8 +29,14 @@ impl BrokerService for ApplicationService {
         let realm_name = input.realm_name.clone();
         let base_url = input.webapp_base_url.clone();
         let user_agent = input.user_agent.clone();
+        let ip_address = input.ip_address.clone();
         let result = self.broker_service.handle_callback(input).await?;
         if let Some(intent) = &result.pending_provider_link {
+            self.check_email_ip(
+                &realm_name,
+                ip_address.as_deref().and_then(|ip| ip.parse().ok()),
+            )
+            .await?;
             self.trident_service
                 .generate_magic_link(MagicLinkInput {
                     realm_name,

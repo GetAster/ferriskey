@@ -23,7 +23,8 @@ The message explicitly asks the person to connect the provider and explains that
 it will let that identity sign in. It uses the existing SMTP sender and magic-link
 URL, expiry, hash and shared sending limits. It deliberately bypasses a generic
 sign-in HTML template so the connection cannot be mistaken for ordinary login.
-Limited mail has the same response as a successful send.
+Recipient or realm suppression has the same response as a successful send.
+The shared client-IP limit returns HTTP 429 before attempting delivery.
 
 Redemption requires the original browser cookie and the correct, unexpired token.
 One database transaction consumes that exact proof, checks the live unauthenticated
