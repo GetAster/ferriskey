@@ -19,7 +19,7 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 `aster-ferriskey-v0.10.2-6` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9631073846ea24cc2b1f107abc9d49a239778b02`. This release adds the console loading-screen repair (row 13) and includes all release -5 fixes. Before tagging, aster-idp passed 154 tests against this exact revision (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent will deploy -6 directly with the rebuilt console; deployed browser verification remains pending.
 
-Previous release: `aster-ferriskey-v0.10.2-5` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `0f79b498cfe187db9ed6177e4037d2a00b890212`. This release repairs passkey error reporting and cross-tab console login (row 12). Before tagging, aster-idp passed 154 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. IdP and console rebuild/deployment and full new-tab application login verification are pending.
+Previous release: `aster-ferriskey-v0.10.2-5` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `0f79b498cfe187db9ed6177e4037d2a00b890212`. This release repairs passkey error reporting and cross-tab console login (row 12). Before tagging, aster-idp passed 154 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent reports it live with rebuilt console in aster-idp `4c4694c`, image `sha256:b4d249c51d23afa6881373d7300f2c77c45371d4d7be104a8dbdda3b4c306086`. Live checks confirmed the host landing page, foreign credential error, stale foreign session recovery and named passkey login reaching callback. Full new-tab application login verification is still pending.
 
 Earlier release: `aster-ferriskey-v0.10.2-4` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `01aa97d11c24b67cc05db994a76e2433a6637e16`. This release adds the optional passkey offer and browser ceremony repairs (row 11). Before tagging, aster-idp passed 154 tests against this exact revision (2 real-binary smoke tests ignored). The deployment agent reports it live at `https://auth.getaster.now` inside aster-idp `67cd793`, image digest `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. Persistent-Chrome/CDP browser verification with an emulated authenticator passed the optional offer, skip/re-offer, enrollment, SSO, discoverable/named sign-in, same-browser reauthentication and mandatory-action refusal journeys.
 
@@ -31,7 +31,7 @@ The previous `-1` tag was created on 2026-11-05 by owner decision before aster-i
 | Tag | Commit | Image digest |
 | --- | --- | --- |
 | `aster-ferriskey-v0.10.2-6` | `96310738` | Deployment pending. |
-| `aster-ferriskey-v0.10.2-5` | `0f79b498` | Superseded by -6 before deployment. |
+| `aster-ferriskey-v0.10.2-5` | `0f79b498` | aster-idp `4c4694c`: `sha256:b4d249c51d23afa6881373d7300f2c77c45371d4d7be104a8dbdda3b4c306086`. |
 | `aster-ferriskey-v0.10.2-4` | `01aa97d1` | aster-idp `67cd793`: `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. |
 | `aster-ferriskey-v0.10.2-3` | `b6b51c55` | aster-idp `a9e77e3`: `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. |
 | `aster-ferriskey-v0.10.2-2` | `4e3781da` | Embedded in deployed aster-idp `54c8cf0`; see the aster-idp deployment record for its image digest. |
