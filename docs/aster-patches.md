@@ -17,9 +17,11 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-5` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `0f79b498cfe187db9ed6177e4037d2a00b890212`. This release repairs passkey error reporting and cross-tab console login (row 12). Before tagging, aster-idp passed 154 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. IdP and console rebuild/deployment and full new-tab application login verification are pending.
+`aster-ferriskey-v0.10.2-6` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9631073846ea24cc2b1f107abc9d49a239778b02`. This release adds the console loading-screen repair (row 13) and includes all release -5 fixes. Before tagging, aster-idp passed 154 tests against this exact revision (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent will deploy -6 directly with the rebuilt console; deployed browser verification remains pending.
 
-Previous release: `aster-ferriskey-v0.10.2-4` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `01aa97d11c24b67cc05db994a76e2433a6637e16`. This release adds the optional passkey offer and browser ceremony repairs (row 11). Before tagging, aster-idp passed 154 tests against this exact revision (2 real-binary smoke tests ignored). The deployment agent reports it live at `https://auth.getaster.now` inside aster-idp `67cd793`, image digest `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. Persistent-Chrome/CDP browser verification with an emulated authenticator passed the optional offer, skip/re-offer, enrollment, SSO, discoverable/named sign-in, same-browser reauthentication and mandatory-action refusal journeys.
+Previous release: `aster-ferriskey-v0.10.2-5` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `0f79b498cfe187db9ed6177e4037d2a00b890212`. This release repairs passkey error reporting and cross-tab console login (row 12). Before tagging, aster-idp passed 154 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. IdP and console rebuild/deployment and full new-tab application login verification are pending.
+
+Earlier release: `aster-ferriskey-v0.10.2-4` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `01aa97d11c24b67cc05db994a76e2433a6637e16`. This release adds the optional passkey offer and browser ceremony repairs (row 11). Before tagging, aster-idp passed 154 tests against this exact revision (2 real-binary smoke tests ignored). The deployment agent reports it live at `https://auth.getaster.now` inside aster-idp `67cd793`, image digest `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. Persistent-Chrome/CDP browser verification with an emulated authenticator passed the optional offer, skip/re-offer, enrollment, SSO, discoverable/named sign-in, same-browser reauthentication and mandatory-action refusal journeys.
 
 Earlier release: `aster-ferriskey-v0.10.2-3` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `b6b51c55af2f5e37a5e457474427775e0c108c03`. This release adds opt-in passwordless realm policy and human browser login continuation (row 10). Before tagging, aster-idp's full suite passed 154 tests against this exact revision (2 real-binary smoke tests remained ignored). Deployed at `https://auth.getaster.now` inside aster-idp `a9e77e3`, image digest `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. The public API confirms passwordless mode on realm `aster` and off on `master`; the console was rebuilt from this tag.
 
@@ -28,7 +30,8 @@ Earlier release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, pub
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-5` | `0f79b498` | Deployment pending. |
+| `aster-ferriskey-v0.10.2-6` | `96310738` | Deployment pending. |
+| `aster-ferriskey-v0.10.2-5` | `0f79b498` | Superseded by -6 before deployment. |
 | `aster-ferriskey-v0.10.2-4` | `01aa97d1` | aster-idp `67cd793`: `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. |
 | `aster-ferriskey-v0.10.2-3` | `b6b51c55` | aster-idp `a9e77e3`: `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. |
 | `aster-ferriskey-v0.10.2-2` | `4e3781da` | Embedded in deployed aster-idp `54c8cf0`; see the aster-idp deployment record for its image digest. |
@@ -69,7 +72,7 @@ Row 12 is published at `0f79b498cfe187db9ed6177e4037d2a00b890212`, released as `
 
 | 13 | `fix/console-login-loading-v0.10.2` | Redirect known empty protected console sessions before React mounts the dark loading screen; preserve public authentication, callbacks, stored sessions and pending hydration. Theme preferences tolerate unavailable storage. Based on row 12 integrated `0f79b498`; topic `727dc132`, integrated `96310738`. | Not submitted. |
 
-Row 13 candidate `9631073846ea24cc2b1f107abc9d49a239778b02` is published, awaiting exact-revision aster-idp validation before tagging. Validation: 19 targeted frontend tests, TypeScript build and independent review passed. No Rust, schema, endpoint or configuration changes. The initial decision reuses the existing auth store and full-document login helper; it runs before React mounts, not before the browser's initial HTML paint. Deployed visual verification remains pending.
+Row 13 is published at `9631073846ea24cc2b1f107abc9d49a239778b02`, released as `aster-ferriskey-v0.10.2-6` after exact-revision aster-idp validation: 154 passed, zero failed, two ignored (exit 0). Validation: 19 targeted frontend tests, TypeScript build and independent review passed. No Rust, schema, endpoint or configuration changes. The initial decision reuses the existing auth store and full-document login helper; it runs before React mounts, not before the browser's initial HTML paint. Deployed visual verification remains pending.
 
 Planned patches are not listed here until they land.
 
