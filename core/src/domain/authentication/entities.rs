@@ -27,6 +27,12 @@ pub use ferriskey_domain::authentication::entities::{
 pub enum WebAuthnChallenge {
     Registration(PasskeyRegistration),
     Authentication(PasskeyAuthentication),
+    /// A username-assisted ceremony keeps its account binding on the server:
+    /// non-discoverable credentials are allowed to omit userHandle.
+    AuthenticationForUser {
+        user_id: Uuid,
+        authentication: PasskeyAuthentication,
+    },
     DiscoverableAuthentication(DiscoverableAuthentication),
 }
 

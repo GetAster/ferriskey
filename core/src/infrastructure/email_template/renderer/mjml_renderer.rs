@@ -47,7 +47,7 @@ impl TemplateRenderer for MjmlTemplateRenderer {
 /// `mrml` parses (and thereby validates) the markup, and its AST serializes to
 /// `{"type": "mj-section", "attributes": {…}, "children": […]}` — one rename away
 /// from a builder node. Only the `<mj-body>` subtree is representable in the
-/// builder, so `<mj-head>` and its global attributes are dropped.
+/// builder. The title is preserved as mail metadata; other head attributes are dropped.
 fn mjml_to_json(mjml: &str) -> Result<serde_json::Value, CoreError> {
     // The markup is supplied by the caller, so a parse failure is bad input,
     // not a server fault — `InvalidEmailTemplateStructure` is the 4xx variant.
@@ -75,7 +75,20 @@ fn mjml_to_json(mjml: &str) -> Result<serde_json::Value, CoreError> {
         .filter_map(mrml_node_to_builder_node)
         .collect::<Vec<_>>();
 
-    Ok(serde_json::json!({ "children": children }))
+    let mut structure = serde_json::json!({ "children": children });
+    if let Some(title) = node_children(&document)
+        .iter()
+        .find(|node| node.get("type").and_then(|v| v.as_str()) == Some("mj-head"))
+        .and_then(|head| {
+            node_children(head)
+                .iter()
+                .find(|node| node.get("type").and_then(|v| v.as_str()) == Some("mj-title"))
+        })
+        .and_then(mrml_node_to_builder_node)
+    {
+        structure["head"] = serde_json::json!({"type": "mj-head", "children": [title]});
+    }
+    Ok(structure)
 }
 
 fn node_children(node: &serde_json::Value) -> &[serde_json::Value] {
@@ -94,7 +107,11 @@ fn mrml_node_to_builder_node(node: &serde_json::Value) -> Option<serde_json::Val
     }
 
     let mut children = Vec::new();
-    let mut content = String::new();
+    let mut content = node
+        .get("children")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
 
     for child in node_children(node) {
         match child {
@@ -220,7 +237,14 @@ fn json_to_mjml(node: &serde_json::Value) -> Result<String, CoreError> {
                 .map(json_to_mjml)
                 .collect::<Result<Vec<String>, CoreError>>()?
                 .join("");
-            return Ok(format!("<mjml><mj-body>{body_children}</mj-body></mjml>"));
+            let head = node
+                .get("head")
+                .map(json_to_mjml)
+                .transpose()?
+                .unwrap_or_default();
+            return Ok(format!(
+                "<mjml>{head}<mj-body>{body_children}</mj-body></mjml>"
+            ));
         }
         return Err(CoreError::InvalidEmailTemplateStructure(
             "missing 'type' field in node".to_string(),
@@ -544,6 +568,30 @@ mod tests {
 
         let html = renderer.render_to_html(&mjml).unwrap();
         assert!(html.contains("Hello {{user.first_name}}"));
+    }
+
+    #[test]
+    fn imported_title_survives_rendering_and_is_used_as_the_mail_subject() {
+        let original = "<mjml><mj-head><mj-title>Your Aster sign-in link</mj-title></mj-head><mj-body><mj-section><mj-column><mj-text>Hello</mj-text></mj-column></mj-section></mj-body></mjml>";
+        let renderer = MjmlTemplateRenderer::new();
+        let structure = renderer.parse_intermediate(original).unwrap();
+        let clean = renderer.sanitize_structure(&structure).unwrap();
+        assert_eq!(
+            crate::domain::email_template::entities::template_subject(
+                &clean,
+                &Default::default(),
+                "Your magic link"
+            ),
+            "Your Aster sign-in link"
+        );
+        let mjml = renderer.render_to_intermediate(&clean).unwrap();
+        assert!(mjml.contains("<mj-title>Your Aster sign-in link</mj-title>"));
+        assert!(
+            renderer
+                .render_to_html(&mjml)
+                .unwrap()
+                .contains("Your Aster sign-in link")
+        );
     }
 
     #[test]

@@ -197,8 +197,9 @@ pub async fn auth_any_client(
 
 const AUTH_SESSION_COOKIE: &str = "FERRISKEY_SESSION";
 
-const STEP_COMPLETING_ACTIONS: [&str; 6] = [
+const STEP_COMPLETING_ACTIONS: [&str; 7] = [
     "/login-actions/continue",
+    "/login-actions/skip",
     "/login-actions/verify-otp",
     "/login-actions/challenge-otp",
     "/login-actions/update-password",

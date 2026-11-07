@@ -20,6 +20,7 @@ use sha1::Sha1;
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
+use webauthn_rs_proto::{ResidentKeyRequirement, UserVerificationPolicy};
 
 use crate::{
     domain::{
@@ -42,7 +43,7 @@ use crate::{
         },
         crypto::HasherRepository,
         email_template::{
-            entities::{insert_request_variables, interpolate_variables},
+            entities::{insert_request_variables, interpolate_variables, template_subject},
             ports::{EmailTemplateRepository, TemplateRenderer},
         },
         password_policy::{
@@ -244,6 +245,19 @@ pub(crate) fn build_webauthn_client(rp_info: WebAuthnRpInfo) -> Result<Webauthn,
             error!("Failed to build Webauthn client: {e:?}");
             CoreError::InternalServerError
         })
+}
+
+/// Ask the browser for a credential that can be used without typing a username.
+/// webauthn-rs already enforces user verification in the registration state;
+/// discoverability is a browser/authenticator storage choice, not an attested claim.
+pub(crate) fn require_discoverable_passkey(challenge: &mut CreationChallengeResponse) {
+    let selection = challenge
+        .public_key
+        .authenticator_selection
+        .get_or_insert_with(Default::default);
+    selection.resident_key = Some(ResidentKeyRequirement::Required);
+    selection.require_resident_key = true;
+    selection.user_verification = UserVerificationPolicy::Required;
 }
 
 #[derive(Clone, Debug)]
@@ -477,16 +491,56 @@ where
         ))
     }
 
+    async fn passkey_offer_for(
+        &self,
+        user_id: Uuid,
+        scope: &RealmScope,
+    ) -> Result<bool, CoreError> {
+        let settings = self.realm_repository.get_realm_settings(scope.id()).await?;
+        if !settings
+            .as_ref()
+            .is_some_and(|s| s.passwordless_enabled && s.passkey_enabled)
+        {
+            return Ok(false);
+        }
+        let user = self
+            .user_repository
+            .get_by_id(user_id)
+            .await?
+            .in_realm(scope)?
+            .into_inner();
+        let credentials = self
+            .credential_repository
+            .get_credentials_by_user_id(user_id)
+            .await
+            .map_err(|_| CoreError::GetUserCredentialsError)?;
+        Ok(crate::domain::trident::mfa_policy::should_offer_passkey(
+            settings.as_ref(),
+            user.email_verified
+                && user
+                    .email
+                    .as_deref()
+                    .is_some_and(|email| !email.trim().is_empty()),
+            credentials
+                .iter()
+                .any(|c| c.credential_type == CredentialType::WebAuthnPublicKeyCredential),
+        ))
+    }
+
     async fn step_requires(
         &self,
         user_id: Uuid,
         scope: &RealmScope,
         action: RequiredAction,
     ) -> Result<bool, CoreError> {
-        Ok(matches!(
-            self.pending_auth_step_for(user_id, scope, &[]).await?,
-            Some(PendingAuthStep::RequiredActions(actions)) if actions.contains(&action)
-        ))
+        let pending = self.pending_auth_step_for(user_id, scope, &[]).await?;
+        match pending {
+            Some(PendingAuthStep::RequiredActions(actions)) => Ok(actions.contains(&action)),
+            _ if action == RequiredAction::ConfigurePasskey => {
+                self.passkey_offer_for(user_id, scope).await
+            }
+            _ => Ok(false),
+        }
     }
 
     async fn store_auth_code_and_generate_login_url(
@@ -540,6 +594,14 @@ where
                 ));
             }
             _ => {}
+        }
+
+        if !satisfied.contains(&RequiredAction::ConfigurePasskey)
+            && self.passkey_offer_for(user_id, scope).await?
+        {
+            return Ok(LoginProgress::ActionsPending(vec![
+                RequiredAction::ConfigurePasskey,
+            ]));
         }
 
         let session_code =
@@ -681,7 +743,8 @@ where
         user: &crate::domain::user::entities::User,
         user_agent: Option<&str>,
         extra_vars: &[(&str, &str)],
-    ) -> Result<String, CoreError> {
+        fallback_subject: &str,
+    ) -> Result<(String, String), CoreError> {
         let template = self
             .email_template_repository
             .get_by_id(scope.id().into(), template_id)
@@ -713,7 +776,10 @@ where
             variables.insert(key.to_string(), value.to_string());
         }
 
-        Ok(interpolate_variables(&html, &variables))
+        Ok((
+            template_subject(&structure, &variables, fallback_subject),
+            interpolate_variables(&html, &variables),
+        ))
     }
 
     async fn resolve_webauthn_credential(
@@ -801,6 +867,7 @@ where
         session_code: String,
         webapp_base_url: String,
         second_factor_verified: bool,
+        skip_action: Option<RequiredAction>,
     ) -> Result<LoginProgress, CoreError> {
         let Identity::User(user) = identity else {
             return Err(CoreError::InvalidCredentials);
@@ -829,6 +896,31 @@ where
         {
             return Err(CoreError::InvalidSession);
         }
+        let satisfied = match skip_action {
+            None => vec![],
+            Some(RequiredAction::ConfigurePasskey) => {
+                // A stored action is mandatory even when the realm would also offer enrollment.
+                if user
+                    .required_actions
+                    .contains(&RequiredAction::ConfigurePasskey)
+                    || !self.passkey_offer_for(user.id, &scope).await?
+                    || matches!(
+                        self.pending_auth_step_for(user.id, &scope, &[]).await?,
+                        Some(PendingAuthStep::RequiredActions(_))
+                    )
+                {
+                    return Err(CoreError::Forbidden(
+                        "only the optional passkey offer can be skipped".into(),
+                    ));
+                }
+                vec![RequiredAction::ConfigurePasskey]
+            }
+            Some(_) => {
+                return Err(CoreError::Forbidden(
+                    "this login action cannot be skipped".into(),
+                ));
+            }
+        };
         self.progress_login(
             LoginStep {
                 session_code: &session_code,
@@ -837,7 +929,7 @@ where
             },
             user.id,
             &scope,
-            &[],
+            &satisfied,
         )
         .await
     }
@@ -1100,6 +1192,20 @@ where
 
         let webauthn = build_webauthn_client(input.rp_info)?;
 
+        if !user
+            .required_actions
+            .contains(&RequiredAction::ConfigurePasskey)
+            && !(settings.passwordless_enabled
+                && settings.passkey_enabled
+                && self
+                    .step_requires(user.id, &scope, RequiredAction::ConfigurePasskey)
+                    .await?)
+        {
+            return Err(CoreError::Forbidden(
+                "passkey enrollment was not requested for this user".into(),
+            ));
+        }
+
         let credentials = self
             .credential_repository
             .get_webauthn_public_key_credentials(user.id)
@@ -1114,16 +1220,11 @@ where
             if filtered.is_empty() {
                 None
             } else {
-                // User already has passkeys — clear the required action if present
-                let _ = self
-                    .user_required_action_repository
-                    .remove_required_action(user.id, RequiredAction::ConfigurePasskey)
-                    .await;
                 Some(filtered)
             }
         };
 
-        let (ccr, pr) = webauthn
+        let (mut ccr, pr) = webauthn
             .start_passkey_registration(
                 user.id,
                 user.email.as_deref().unwrap_or(""),
@@ -1134,6 +1235,8 @@ where
                 error!("Failed to generate webauthn challenge: {e:?}");
                 CoreError::InternalServerError
             })?;
+
+        require_discoverable_passkey(&mut ccr);
 
         let _ = self
             .auth_session_repository
@@ -1180,7 +1283,20 @@ where
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
-        if !required_actions.contains(&RequiredAction::ConfigurePasskey) {
+        let scope = RealmScope::from_realm(
+            self.realm_repository
+                .get_by_id(user.realm_id)
+                .await?
+                .ok_or(CoreError::InvalidRealm)?,
+        );
+
+        if !required_actions.contains(&RequiredAction::ConfigurePasskey)
+            && !(settings.passwordless_enabled
+                && settings.passkey_enabled
+                && self
+                    .step_requires(user.id, &scope, RequiredAction::ConfigurePasskey)
+                    .await?)
+        {
             warn!(
                 user_id = %user.id,
                 "Refused passkey enrolment: user carries no ConfigurePasskey required action"
@@ -1194,13 +1310,6 @@ where
             Uuid::parse_str(&input.session_code).map_err(|_| CoreError::SessionCreateError)?;
 
         let webauthn = build_webauthn_client(input.rp_info)?;
-
-        let scope = RealmScope::from_realm(
-            self.realm_repository
-                .get_by_id(user.realm_id)
-                .await?
-                .ok_or(CoreError::InvalidRealm)?,
-        );
 
         let auth_session = self
             .auth_session_repository
@@ -1431,7 +1540,10 @@ where
                 .user_repository
                 .get_by_username(username, scope.id())
                 .await
-                .map_err(|_| CoreError::WebAuthnChallengeFailed)?;
+                .map_err(|_| {
+                    warn!(realm_id = ?scope.id(), "Passkey options refused: login identifier lookup failed");
+                    CoreError::WebAuthnChallengeFailed
+                })?;
 
             let creds = self
                 .credential_repository
@@ -1451,6 +1563,8 @@ where
                 .collect::<Result<Vec<Passkey>, CoreError>>()?;
 
             if creds.is_empty() {
+                warn!(realm_id = ?scope.id(), user_id = %user.id,
+                    "Passkey options refused: account has no passkey credentials");
                 return Err(CoreError::WebAuthnChallengeFailed);
             }
 
@@ -1460,7 +1574,13 @@ where
             })?;
 
             self.auth_session_repository
-                .save_webauthn_challenge(auth_session.id, WebAuthnChallenge::Authentication(pa))
+                .save_webauthn_challenge(
+                    auth_session.id,
+                    WebAuthnChallenge::AuthenticationForUser {
+                        user_id: user.id,
+                        authentication: pa,
+                    },
+                )
                 .await
                 .map_err(|_| CoreError::InternalServerError)?;
 
@@ -1506,8 +1626,54 @@ where
             .map_err(|_| CoreError::SessionNotFound)?
             .into_inner();
 
-        let webauthn_challenge = auth_session.webauthn_challenge.take();
+        let now = Utc::now();
+        if auth_session.authenticated
+            || auth_session.code.is_some()
+            || auth_session.expires_at <= now
+        {
+            return Err(CoreError::InvalidSession);
+        }
+        let issued_at = auth_session
+            .webauthn_challenge_issued_at
+            .ok_or(CoreError::WebAuthnMissingChallenge)?;
+        if issued_at > now || now - issued_at > Duration::minutes(WEBAUTHN_CHALLENGE_TTL_MINUTES) {
+            return Err(CoreError::WebAuthnChallengeFailed);
+        }
+        let webauthn_challenge = self
+            .auth_session_repository
+            .take_webauthn_challenge(auth_session.id)
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
         let (auth_result, user) = match webauthn_challenge {
+            Some(WebAuthnChallenge::AuthenticationForUser {
+                user_id,
+                ref authentication,
+            }) => {
+                let auth_result = webauthn
+                    .finish_passkey_authentication(&input.credential, authentication)
+                    .map_err(|e| {
+                        error!("Error during username-assisted passkey authentication: {e:?}");
+                        CoreError::WebAuthnChallengeFailed
+                    })?;
+
+                // WebAuthn §7.2: when the account was identified before the
+                // ceremony, userHandle is optional, but must match if supplied.
+                if input
+                    .credential
+                    .get_user_unique_id()
+                    .is_some_and(|handle| handle != user_id.as_bytes())
+                {
+                    return Err(CoreError::WebAuthnChallengeFailed);
+                }
+                let (user, _) = self
+                    .resolve_webauthn_credential(
+                        auth_result.cred_id().as_slice(),
+                        user_id.as_bytes(),
+                        &scope,
+                    )
+                    .await?;
+                (auth_result, user)
+            }
             Some(WebAuthnChallenge::Authentication(ref pa)) => {
                 let auth_result = webauthn
                     .finish_passkey_authentication(&input.credential, pa)
@@ -2147,7 +2313,7 @@ where
                     "Click the link below to sign in:\n{magic_link_url}\n\nThis link expires in {ttl_minutes} minutes.\n\nIf you did not request this, please ignore this email.",
                 );
 
-                let html_body = self
+                let rendered = self
                     .render_email_template(
                         &scope,
                         tid,
@@ -2157,16 +2323,20 @@ where
                             ("magic_link", magic_link_url.as_str()),
                             ("expiration", &format!("{ttl_minutes} minutes")),
                         ],
+                        "Your magic link",
                     )
                     .await
                     .ok();
+                let (subject, html_body) = rendered
+                    .map(|(subject, html)| (subject, Some(html)))
+                    .unwrap_or_else(|| ("Your magic link".to_string(), None));
 
                 match self
                     .email_port
                     .send_email(
                         &smtp_config,
                         user.email.as_deref().unwrap_or(""),
-                        "Your magic link",
+                        &subject,
                         &body,
                         html_body,
                     )
@@ -2398,6 +2568,9 @@ where
         let pending_actions = match pending {
             Some(PendingAuthStep::RequiredActions(actions)) => actions,
             Some(PendingAuthStep::OtpChallenge) => vec![],
+            None if self.passkey_offer_for(magic_link.user_id, &scope).await? => {
+                vec![RequiredAction::ConfigurePasskey]
+            }
             None => {
                 let (login_url, sso_session) = self
                     .complete_login(
@@ -2527,7 +2700,7 @@ where
                     "A password reset was requested for your account.\n\nClick the link below to reset your password:\n{reset_link}\n\nThis link expires in {ttl_minutes} minutes.\n\nIf you did not request this, please ignore this email.",
                 );
 
-                let html_body = self
+                let rendered = self
                     .render_email_template(
                         &scope,
                         tid,
@@ -2537,16 +2710,20 @@ where
                             ("reset_link", reset_link.as_str()),
                             ("expiration", &format!("{ttl_minutes} minutes")),
                         ],
+                        "Reset your password",
                     )
                     .await
                     .ok();
+                let (subject, html_body) = rendered
+                    .map(|(subject, html)| (subject, Some(html)))
+                    .unwrap_or_else(|| ("Reset your password".to_string(), None));
 
                 match self
                     .email_port
                     .send_email(
                         &smtp_config,
                         user.email.as_deref().unwrap_or(""),
-                        "Reset your password",
+                        &subject,
                         &body,
                         html_body,
                     )
@@ -5045,6 +5222,14 @@ mod tests {
         let mut builder = TridentTestBuilder::new();
         let realm = create_test_realm_with_name("test-realm");
         let user = create_test_user_with_email(&realm, "victim@example.com");
+        let owning = realm.clone();
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_by_id()
+            .returning(move |_| {
+                let realm = owning.clone();
+                Box::pin(async move { Ok(Some(realm)) })
+            });
 
         let settings_realm_id = realm.id;
         Arc::get_mut(&mut builder.realm_repo)
@@ -6046,6 +6231,14 @@ mod tests {
         realm: &crate::domain::realm::entities::Realm,
         claimed_user_handle: Uuid,
     ) -> PasskeyAssertionFixture {
+        passkey_assertion_fixture_with_account(realm, claimed_user_handle, None)
+    }
+
+    fn passkey_assertion_fixture_with_account(
+        realm: &Realm,
+        claimed_user_handle: Uuid,
+        identified_user: Option<Uuid>,
+    ) -> PasskeyAssertionFixture {
         let key = passkey_signing_key();
         let credential_id = b"passkey-credential-id".to_vec();
         let credential = webauthn_credential_for(&credential_id, &key);
@@ -6058,7 +6251,13 @@ mod tests {
 
         let session_code = Uuid::new_v4();
         let session = AuthSession {
-            webauthn_challenge: Some(WebAuthnChallenge::Authentication(state)),
+            webauthn_challenge: Some(match identified_user {
+                Some(user_id) => WebAuthnChallenge::AuthenticationForUser {
+                    user_id,
+                    authentication: state,
+                },
+                None => WebAuthnChallenge::Authentication(state),
+            }),
             ..auth_session_with_challenge_issued_at(realm, session_code, Some(Utc::now()))
         };
 
@@ -6087,6 +6286,15 @@ mod tests {
             .returning(move |_| {
                 let s = session_clone.clone();
                 Box::pin(async move { Ok(Unscoped::new(s)) })
+            });
+
+        let mut challenge = session.webauthn_challenge.clone();
+        Arc::get_mut(&mut builder.auth_session_repo)
+            .unwrap()
+            .expect_take_webauthn_challenge()
+            .returning(move |_| {
+                let claimed = challenge.take();
+                Box::pin(async move { Ok(claimed) })
             });
 
         PasskeyAssertionFixture {
@@ -6250,14 +6458,32 @@ mod tests {
         credentials: Vec<Credential>,
         code_expected: bool,
     ) -> Result<PasskeyAuthenticateOutput, CoreError> {
+        passkey_login_with_handle(realm, owner, credentials, code_expected, None).await
+    }
+
+    async fn passkey_login_with_handle(
+        realm: &Realm,
+        owner: User,
+        credentials: Vec<Credential>,
+        code_expected: bool,
+        identified_handle: Option<Option<Uuid>>,
+    ) -> Result<PasskeyAuthenticateOutput, CoreError> {
         let PasskeyAssertionFixture {
             mut builder,
             session_code,
             session,
             credential_id,
             credential,
-            assertion,
-        } = passkey_assertion_fixture(realm, owner.id);
+            mut assertion,
+        } = passkey_assertion_fixture_with_account(
+            realm,
+            owner.id,
+            identified_handle.map(|_| owner.id),
+        );
+
+        if let Some(handle) = identified_handle {
+            assertion.response.user_handle = handle.map(|id| id.as_bytes().to_vec().into());
+        }
 
         let owner_id = owner.id;
         let expected_credential_id = credential_id.clone();
@@ -6285,17 +6511,26 @@ mod tests {
             expect_no_authorization_code(&mut builder);
         }
 
-        builder
-            .build()
-            .passkey_authenticate(PasskeyAuthenticateInput {
-                webapp_base_url: TEST_WEBAPP_URL.to_string(),
-                realm_name: realm.name.clone(),
-                session_code: session_code.to_string(),
-                rp_info: passkey_rp_info(),
-                credential: assertion,
-                remember_me: false,
-            })
-            .await
+        let service = builder.build();
+        let input = || PasskeyAuthenticateInput {
+            webapp_base_url: TEST_WEBAPP_URL.to_string(),
+            realm_name: realm.name.clone(),
+            session_code: session_code.to_string(),
+            rp_info: passkey_rp_info(),
+            credential: assertion.clone(),
+            remember_me: false,
+        };
+        let result = service.passkey_authenticate(input()).await;
+        if code_expected {
+            assert!(
+                matches!(
+                    service.passkey_authenticate(input()).await,
+                    Err(CoreError::WebAuthnMissingChallenge)
+                ),
+                "a successfully signed assertion cannot be replayed"
+            );
+        }
+        result
     }
 
     #[tokio::test]
@@ -6314,6 +6549,64 @@ mod tests {
             "the owner must be redirected with an authorization code: {}",
             output.login_url
         );
+    }
+
+    #[tokio::test]
+    async fn username_assisted_passkey_accepts_an_absent_or_matching_user_handle() {
+        let realm = create_test_realm_with_name("passkey-realm");
+        let owner = create_test_user_with_email(&realm, "owner@example.com");
+        for handle in [None, Some(owner.id)] {
+            let output =
+                passkey_login_with_handle(&realm, owner.clone(), vec![], true, Some(handle))
+                    .await
+                    .expect("the account bound to the challenge owns this signing credential");
+            assert!(output.login_url.contains("code="));
+        }
+    }
+
+    #[test]
+    fn passkey_assertions_accept_both_absent_and_null_user_handle() {
+        let assertion = signed_passkey_assertion(
+            b"challenge",
+            b"credential-id",
+            &passkey_signing_key(),
+            Uuid::new_v4(),
+        );
+        let mut json = serde_json::to_value(assertion).unwrap();
+        json["response"]
+            .as_object_mut()
+            .unwrap()
+            .remove("userHandle");
+        let absent: PublicKeyCredential = serde_json::from_value(json.clone()).unwrap();
+        assert!(absent.get_user_unique_id().is_none());
+        json["response"]["userHandle"] = serde_json::Value::Null;
+        let null: PublicKeyCredential = serde_json::from_value(json).unwrap();
+        assert!(null.get_user_unique_id().is_none());
+    }
+
+    #[tokio::test]
+    async fn username_assisted_passkey_refuses_a_different_user_handle() {
+        let realm = create_test_realm_with_name("passkey-realm");
+        let owner = create_test_user_with_email(&realm, "owner@example.com");
+        let result =
+            passkey_login_with_handle(&realm, owner, vec![], false, Some(Some(Uuid::new_v4())))
+                .await;
+        assert!(matches!(result, Err(CoreError::WebAuthnChallengeFailed)));
+    }
+
+    #[test]
+    fn passkey_creation_requests_discoverability_and_user_verification() {
+        let webauthn = build_webauthn_client(passkey_rp_info()).unwrap();
+        let (mut challenge, _) = webauthn
+            .start_passkey_registration(Uuid::new_v4(), "person@example.com", "Person", None)
+            .unwrap();
+        require_discoverable_passkey(&mut challenge);
+        let json = serde_json::to_value(challenge).unwrap();
+        let selection = &json["publicKey"]["authenticatorSelection"];
+        assert_eq!(selection["residentKey"], "required");
+        assert_eq!(selection["requireResidentKey"], true);
+        assert_eq!(selection["userVerification"], "required");
+        assert!(selection.get("authenticatorAttachment").is_none());
     }
 
     #[tokio::test]
@@ -6516,6 +6809,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn passkey_request_options_binds_the_account_during_sso_reauthentication() {
+        let realm = create_test_realm_with_name("passkey-options-realm");
+        let caller = create_test_user_with_email(&realm, "caller@example.com");
+        let session_code = Uuid::new_v4();
+        let mut session = auth_session_with_challenge_issued_at(&realm, session_code, None);
+        session.reauth_session_id = Some(Uuid::new_v4());
+        let mut builder = TridentTestBuilder::new().with_realm_and_user(&realm, &caller);
+        let named = caller.clone();
+        Arc::get_mut(&mut builder.user_repo)
+            .unwrap()
+            .expect_get_by_username()
+            .returning(move |_, _| {
+                let user = named.clone();
+                Box::pin(async move { Ok(user) })
+            });
+        expect_one_enrolled_passkey(&mut builder, caller.id, b"reauth-passkey");
+        let loaded = session.clone();
+        Arc::get_mut(&mut builder.auth_session_repo)
+            .unwrap()
+            .expect_get_by_session_code()
+            .returning(move |_| {
+                let session = loaded.clone();
+                Box::pin(async move { Ok(Unscoped::new(session)) })
+            });
+        let caller_id = caller.id;
+        Arc::get_mut(&mut builder.auth_session_repo).unwrap()
+            .expect_save_webauthn_challenge()
+            .withf(move |code, challenge| {
+                let serialized = serde_json::to_value(challenge).unwrap();
+                let restored: WebAuthnChallenge = serde_json::from_value(serialized).unwrap();
+                *code == session_code && matches!(restored,
+                    WebAuthnChallenge::AuthenticationForUser { user_id, .. } if user_id == caller_id)
+            })
+            .times(1)
+            .returning(move |_, _| {
+                let session = session.clone();
+                Box::pin(async move { Ok(session) })
+            });
+        let options = builder
+            .build()
+            .passkey_request_options(PasskeyRequestOptionsInput {
+                realm_name: realm.name,
+                session_code: session_code.to_string(),
+                username: Some(caller.username),
+                rp_info: passkey_rp_info(),
+            })
+            .await
+            .expect("an existing SSO session does not block a fresh passkey ceremony");
+        assert_eq!(options.0.public_key.allow_credentials.len(), 1);
+    }
+
+    #[tokio::test]
     async fn discoverable_passkey_request_options_refuses_a_session_of_another_realm() {
         let url_realm = create_test_realm_with_name("passkey-options-realm");
         let session_realm = create_test_realm_with_name("neighbour-passkey-options-realm");
@@ -6622,6 +6967,211 @@ mod tests {
             Box::pin(async move { Ok(LoginAdmission::ConsentRequired { redirect_url }) })
         });
         admission
+    }
+
+    #[tokio::test]
+    async fn passkey_creation_options_keep_an_existing_enrollment_action() {
+        let realm = create_test_realm_with_name("webauthn-create-options-realm");
+        let mut caller = create_test_user_with_email(&realm, "caller@example.com");
+        caller.required_actions = vec![RequiredAction::ConfigurePasskey];
+        let session_code = Uuid::new_v4();
+        let mut builder = TridentTestBuilder::new();
+        let realm_id = realm.id;
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                Box::pin(async move { Ok(Some(RealmSetting::new(realm_id, None))) })
+            });
+        let owning = realm.clone();
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_by_id()
+            .returning(move |_| {
+                let realm = owning.clone();
+                Box::pin(async move { Ok(Some(realm)) })
+            });
+        expect_one_enrolled_passkey(&mut builder, caller.id, b"existing-passkey");
+        expect_session_of(&mut builder, &realm, session_code);
+        Arc::get_mut(&mut builder.user_required_action_repo)
+            .unwrap()
+            .expect_remove_required_action()
+            .never();
+        let saved = auth_session_with_challenge_issued_at(&realm, session_code, None);
+        Arc::get_mut(&mut builder.auth_session_repo)
+            .unwrap()
+            .expect_save_webauthn_challenge()
+            .times(1)
+            .returning(move |_, _| {
+                let session = saved.clone();
+                Box::pin(async move { Ok(session) })
+            });
+        let options = builder
+            .build()
+            .webauthn_public_key_create_options(
+                Identity::User(caller),
+                WebAuthnPublicKeyCreateOptionsInput {
+                    session_code: session_code.to_string(),
+                    rp_info: passkey_rp_info(),
+                },
+            )
+            .await
+            .expect("having an old passkey must not clear a new enrollment action");
+        let json = serde_json::to_value(options.0).unwrap();
+        assert_eq!(
+            json["publicKey"]["excludeCredentials"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            json["publicKey"]["authenticatorSelection"]["residentKey"],
+            "required"
+        );
+        assert_eq!(
+            json["publicKey"]["authenticatorSelection"]["userVerification"],
+            "required"
+        );
+    }
+
+    #[tokio::test]
+    async fn optional_passkey_offer_can_start_enrollment_and_reaches_proof_validation() {
+        let realm = create_test_realm_with_name("passwordless-offer");
+        let mut caller = create_test_user_with_email(&realm, "caller@example.com");
+        caller.email_verified = true;
+        let mut settings = RealmSetting::new(realm.id, None);
+        settings.passwordless_enabled = true;
+        settings.passkey_enabled = true;
+        let mut builder = TridentTestBuilder::new();
+        expect_pending_step_lookups(&mut builder, caller.clone(), vec![], settings);
+        let owning = realm.clone();
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_by_id()
+            .returning(move |_| {
+                let realm = owning.clone();
+                Box::pin(async move { Ok(Some(realm)) })
+            });
+        Arc::get_mut(&mut builder.user_required_action_repo)
+            .unwrap()
+            .expect_get_required_actions()
+            .returning(|_| Box::pin(async { Ok(vec![]) }));
+        Arc::get_mut(&mut builder.credential_repo)
+            .unwrap()
+            .expect_get_webauthn_public_key_credentials()
+            .returning(|_| Box::pin(async { Ok(vec![]) }));
+        Arc::get_mut(&mut builder.credential_repo)
+            .unwrap()
+            .expect_create_webauthn_credential()
+            .never();
+        let session_code = Uuid::new_v4();
+        let (_, registration) = build_webauthn_client(passkey_rp_info())
+            .unwrap()
+            .start_passkey_registration(caller.id, "caller@example.com", "Caller", None)
+            .unwrap();
+        let session = AuthSession {
+            webauthn_challenge: Some(WebAuthnChallenge::Registration(registration)),
+            ..auth_session_with_challenge_issued_at(&realm, session_code, Some(Utc::now()))
+        };
+        let loaded = session.clone();
+        Arc::get_mut(&mut builder.auth_session_repo)
+            .unwrap()
+            .expect_get_by_session_code()
+            .returning(move |_| {
+                let session = loaded.clone();
+                Box::pin(async move { Ok(Unscoped::new(session)) })
+            });
+        Arc::get_mut(&mut builder.auth_session_repo)
+            .unwrap()
+            .expect_save_webauthn_challenge()
+            .returning(move |_, _| {
+                let session = session.clone();
+                Box::pin(async move { Ok(session) })
+            });
+        let service = builder.build();
+        service
+            .webauthn_public_key_create_options(
+                Identity::User(caller.clone()),
+                WebAuthnPublicKeyCreateOptionsInput {
+                    session_code: session_code.to_string(),
+                    rp_info: passkey_rp_info(),
+                },
+            )
+            .await
+            .expect("an optional offer is sufficient to request creation options");
+        let result = service
+            .webauthn_public_key_create(Identity::User(caller), webauthn_create_input(session_code))
+            .await;
+        assert!(
+            matches!(result, Err(CoreError::Invalid)),
+            "an optional offer must reach proof validation, not fail the stored-action gate"
+        );
+    }
+
+    #[tokio::test]
+    async fn passkey_authentication_refuses_expired_completed_or_stale_ceremonies() {
+        let realm = create_test_realm_with_name("passkey-realm");
+        for invalid in [
+            "expired",
+            "completed",
+            "code-issued",
+            "missing-time",
+            "stale",
+            "future",
+        ] {
+            let fixture = passkey_assertion_fixture(&realm, Uuid::new_v4());
+            let mut session = fixture.session;
+            match invalid {
+                "expired" => session.expires_at = Utc::now() - Duration::seconds(1),
+                "completed" => session.authenticated = true,
+                "code-issued" => session.code = Some("already-issued".into()),
+                "missing-time" => session.webauthn_challenge_issued_at = None,
+                "stale" => {
+                    session.webauthn_challenge_issued_at = Some(Utc::now() - Duration::minutes(6))
+                }
+                "future" => {
+                    session.webauthn_challenge_issued_at = Some(Utc::now() + Duration::minutes(1))
+                }
+                _ => unreachable!(),
+            }
+            let mut builder = TridentTestBuilder::new();
+            let resolved = realm.clone();
+            Arc::get_mut(&mut builder.realm_repo)
+                .unwrap()
+                .expect_get_by_name()
+                .returning(move |_| {
+                    let realm = resolved.clone();
+                    Box::pin(async move { Ok(Some(realm)) })
+                });
+            Arc::get_mut(&mut builder.auth_session_repo)
+                .unwrap()
+                .expect_get_by_session_code()
+                .returning(move |_| {
+                    let session = session.clone();
+                    Box::pin(async move { Ok(Unscoped::new(session)) })
+                });
+            Arc::get_mut(&mut builder.auth_session_repo)
+                .unwrap()
+                .expect_take_webauthn_challenge()
+                .never();
+            expect_no_authorization_code(&mut builder);
+            assert!(
+                builder
+                    .build()
+                    .passkey_authenticate(PasskeyAuthenticateInput {
+                        realm_name: realm.name.clone(),
+                        session_code: fixture.session_code.to_string(),
+                        webapp_base_url: TEST_WEBAPP_URL.into(),
+                        rp_info: passkey_rp_info(),
+                        credential: fixture.assertion,
+                        remember_me: false,
+                    })
+                    .await
+                    .is_err(),
+                "{invalid} ceremony must be refused"
+            );
+        }
     }
 
     fn refusing_admission() -> MockLoginAdmissionPort {

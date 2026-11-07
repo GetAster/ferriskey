@@ -14,3 +14,5 @@ pub mod revoke;
 pub mod token;
 pub mod userinfo;
 pub mod verify_email;
+
+pub mod skip_login_action;

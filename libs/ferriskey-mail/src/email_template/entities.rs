@@ -178,6 +178,44 @@ pub fn interpolate_variables(html: &str, variables: &HashMap<String, String>) ->
     result
 }
 
+/// Uses the template's MJML title as a plain-text mail subject. Templates without
+/// a nonblank title keep the existing message-specific fallback. Whitespace is
+/// folded after substitution so template variables cannot introduce header lines.
+pub fn template_subject(
+    structure: &serde_json::Value,
+    variables: &HashMap<String, String>,
+    fallback: &str,
+) -> String {
+    let head =
+        structure.get("head").or_else(|| {
+            structure.get("children")?.as_array()?.iter().find(|node| {
+                node.get("type").and_then(serde_json::Value::as_str) == Some("mj-head")
+            })
+        });
+    let title = head
+        .and_then(|head| head.get("children"))
+        .and_then(serde_json::Value::as_array)
+        .and_then(|nodes| {
+            nodes.iter().find(|node| {
+                node.get("type").and_then(serde_json::Value::as_str) == Some("mj-title")
+            })
+        })
+        .and_then(|node| node.get("content"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or(fallback);
+    let mut subject = title.to_string();
+    for (key, value) in variables {
+        subject = subject.replace(&format!("{{{{{key}}}}}"), value);
+    }
+    let subject = subject.replace(char::is_control, " ");
+    let subject = subject.split_whitespace().collect::<Vec<_>>().join(" ");
+    if subject.is_empty() {
+        fallback.to_string()
+    } else {
+        subject
+    }
+}
+
 fn html_escape(input: &str) -> String {
     input
         .replace('&', "&amp;")
@@ -190,6 +228,34 @@ fn html_escape(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn template_title_becomes_a_plain_text_subject_with_safe_variables() {
+        let structure = serde_json::json!({"head": {"type": "mj-head", "children": [
+            {"type": "mj-title", "content": "Your Aster sign-in link, {{user.first_name}}"}
+        ]}});
+        let variables =
+            HashMap::from([("user.first_name".to_string(), "A & B\r\nTest\0".to_string())]);
+        assert_eq!(
+            template_subject(&structure, &variables, "Fallback"),
+            "Your Aster sign-in link, A & B Test"
+        );
+    }
+
+    #[test]
+    fn missing_or_blank_template_titles_keep_the_existing_subject() {
+        for structure in [
+            serde_json::json!({}),
+            serde_json::json!({"head": {"children": [
+                {"type": "mj-title", "content": " \r\n "}
+            ]}}),
+        ] {
+            assert_eq!(
+                template_subject(&structure, &HashMap::new(), "Your magic link"),
+                "Your magic link"
+            );
+        }
+    }
 
     #[test]
     fn test_email_type_display() {

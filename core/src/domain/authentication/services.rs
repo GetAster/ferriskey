@@ -4915,6 +4915,27 @@ where
             });
         }
 
+        if input.primary_authentication && settings.passwordless_enabled && settings.passkey_enabled
+        {
+            let credentials = self
+                .credential_repository
+                .get_credentials_by_user_id(user.id)
+                .await
+                .map_err(|_| CoreError::GetUserCredentialsError)?;
+            if crate::domain::trident::mfa_policy::should_offer_passkey(
+                Some(&settings),
+                user.email_verified && user.email.as_deref().is_some_and(|e| !e.trim().is_empty()),
+                credentials
+                    .iter()
+                    .any(|c| c.credential_type == CredentialType::WebAuthnPublicKeyCredential),
+            ) {
+                return Ok(LoginAdmission::ActionsRequired {
+                    required_actions: vec![RequiredAction::ConfigurePasskey],
+                    second_factor_pending: false,
+                });
+            }
+        }
+
         let consent = self
             .consent_gate(
                 input.user_id,

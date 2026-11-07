@@ -9,7 +9,7 @@ pub struct UpdateUserInput {
     pub lastname: Option<String>,
     pub email: Option<String>,
     pub email_verified: Option<bool>,
-    pub enabled: bool,
+    pub enabled: Option<bool>,
     pub required_actions: Option<Vec<String>>,
 }
 

@@ -27,6 +27,7 @@ impl TridentService for ApplicationService {
         session_code: String,
         webapp_base_url: String,
         second_factor_verified: bool,
+        skip_action: Option<crate::domain::user::entities::RequiredAction>,
     ) -> Result<LoginProgress, CoreError> {
         self.trident_service
             .continue_login(
@@ -35,6 +36,7 @@ impl TridentService for ApplicationService {
                 session_code,
                 webapp_base_url,
                 second_factor_verified,
+                skip_action,
             )
             .await
     }

@@ -347,6 +347,7 @@ pub trait TridentService: Send + Sync {
         session_code: String,
         webapp_base_url: String,
         second_factor_verified: bool,
+        skip_action: Option<crate::domain::user::entities::RequiredAction>,
     ) -> impl Future<Output = Result<LoginProgress, CoreError>> + Send;
     fn generate_recovery_code(
         &self,
