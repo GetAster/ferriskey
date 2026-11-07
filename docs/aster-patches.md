@@ -84,6 +84,10 @@ Rows 14–15 are released as `aster-ferriskey-v0.10.2-7` at `54e4f20d7b98a650ea4
 
 This admission controls API access, not delivery of static console HTML. Aster owns its device journey; the generic Ferriskey device page retains existing explicit login recovery, which still defaults to its console client. Email continuation uses the existing action cookie instead of reconstructing a console-client login. Missing action context offers return to the original application; explicit server errors remain retryable. The pre-existing login-action middleware can map internal authorization failures to 401, so browser code cannot distinguish every server failure from missing context; that mapping remains a follow-up.
 
+| 16 | `fix/microsoft-tenant-validation` | Microsoft public-cloud tenant-independent issuer validation binds signed canonical `tid`, exact token issuer and selected signing JWK issuer; provider links use tenant plus encoded subject. No userinfo fallback without verified tenant evidence. Other providers retain exact issuer checks and their existing link keys. Based on row 15 integrated `54e4f20d`; topic `5d23ec85`, integrated `a53a5e04`. | Not submitted. |
+
+Row 16 is published on the patched branch at `a53a5e0438474bd6591f149d469f1707714e3f52`, awaiting exact-revision aster-idp validation before tagging. All 52 broker tests passed, including six new tests for organizational/personal tenants, malformed tenants, token/key issuer mismatch, signature/audience/nonce/expiry, tenant-separated identity and refusal to fall back to userinfo. Independent implementation review passed. No schema, endpoint or configuration key is added; set the existing issuer to `https://login.microsoftonline.com/{tenantid}/v2.0`. Existing fixed-issuer provider links are not automatically migrated when switching modes. The existing three-condition email-linking rule is unchanged; no `xms_edov` inference is added.
+
 Planned patches are not listed here until they land.
 
 ## Development browser verification for release -3
