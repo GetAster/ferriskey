@@ -260,6 +260,22 @@ pub(crate) fn require_discoverable_passkey(challenge: &mut CreationChallengeResp
     selection.user_verification = UserVerificationPolicy::Required;
 }
 
+fn passkey_assertion_error(error: WebauthnError) -> CoreError {
+    match error {
+        WebauthnError::CredentialPossibleCompromise => CoreError::WebAuthnCounterRegression,
+        WebauthnError::CredentialNotFound | WebauthnError::InvalidUserUniqueId => {
+            CoreError::WebAuthnUnknownCredential
+        }
+        WebauthnError::ChallengeNotFound => CoreError::WebAuthnMissingChallenge,
+        WebauthnError::MismatchedChallenge => CoreError::WebAuthnChallengeFailed,
+        WebauthnError::Configuration
+        | WebauthnError::CredentialRetrievalError
+        | WebauthnError::CredentialPersistenceError
+        | WebauthnError::CredentialCounterUpdateFailure => CoreError::InternalServerError,
+        _ => CoreError::WebAuthnInvalidAssertion,
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TridentServiceImpl<
     CR,
@@ -789,22 +805,25 @@ where
         scope: &RealmScope,
     ) -> Result<(Scoped<User>, Credential), CoreError> {
         let user_uuid =
-            Uuid::from_slice(user_handle).map_err(|_| CoreError::WebAuthnChallengeFailed)?;
+            Uuid::from_slice(user_handle).map_err(|_| CoreError::WebAuthnUnknownCredential)?;
 
         let user = self
             .user_repository
             .get_by_id(user_uuid)
             .await
-            .map_err(|_| CoreError::WebAuthnChallengeFailed)?
+            .map_err(|error| match error {
+                CoreError::NotFound => CoreError::WebAuthnUnknownCredential,
+                error => error,
+            })?
             .in_realm(scope)
-            .map_err(|_| CoreError::WebAuthnChallengeFailed)?;
+            .map_err(|_| CoreError::WebAuthnUnknownCredential)?;
 
         let credential = self
             .credential_repository
             .get_webauthn_credential_by_credential_id_and_user(credential_id, &user)
             .await
             .map_err(|_| CoreError::InternalServerError)?
-            .ok_or(CoreError::WebAuthnChallengeFailed)?;
+            .ok_or(CoreError::WebAuthnUnknownCredential)?;
 
         Ok((user, credential))
     }
@@ -1353,10 +1372,10 @@ where
             .remove_required_action(user.id, RequiredAction::ConfigurePasskey)
             .await
         {
-            warn!(
-                user_id = %user.id,
-                "Failed to remove ConfigurePasskey required action after passkey enrolment: {e:?}"
-            );
+            if !matches!(e, RequiredActionError::NotFound) {
+                warn!(user_id = %user.id,
+                    "Failed to remove ConfigurePasskey required action after passkey enrolment: {e:?}");
+            }
         }
 
         let progress = self
@@ -1538,12 +1557,10 @@ where
             // Non-discoverable: we know the user, fetch their passkeys
             let user = self
                 .user_repository
-                .get_by_username(username, scope.id())
-                .await
-                .map_err(|_| {
-                    warn!(realm_id = ?scope.id(), "Passkey options refused: login identifier lookup failed");
-                    CoreError::WebAuthnChallengeFailed
-                })?;
+                .find_by_username(username, scope.id())
+                .await?
+                .filter(|user| user.realm_id == scope.id())
+                .ok_or(CoreError::WebAuthnUnknownUser)?;
 
             let creds = self
                 .credential_repository
@@ -1565,7 +1582,7 @@ where
             if creds.is_empty() {
                 warn!(realm_id = ?scope.id(), user_id = %user.id,
                     "Passkey options refused: account has no passkey credentials");
-                return Err(CoreError::WebAuthnChallengeFailed);
+                return Err(CoreError::WebAuthnUnknownUser);
             }
 
             let (rcr, pa) = webauthn.start_passkey_authentication(&creds).map_err(|e| {
@@ -1653,7 +1670,7 @@ where
                     .finish_passkey_authentication(&input.credential, authentication)
                     .map_err(|e| {
                         error!("Error during username-assisted passkey authentication: {e:?}");
-                        CoreError::WebAuthnChallengeFailed
+                        passkey_assertion_error(e)
                     })?;
 
                 // WebAuthn §7.2: when the account was identified before the
@@ -1663,7 +1680,7 @@ where
                     .get_user_unique_id()
                     .is_some_and(|handle| handle != user_id.as_bytes())
                 {
-                    return Err(CoreError::WebAuthnChallengeFailed);
+                    return Err(CoreError::WebAuthnUnknownCredential);
                 }
                 let (user, _) = self
                     .resolve_webauthn_credential(
@@ -1679,13 +1696,13 @@ where
                     .finish_passkey_authentication(&input.credential, pa)
                     .map_err(|e| {
                         error!("Error during passkey authentication: {e:?}");
-                        CoreError::WebAuthnChallengeFailed
+                        passkey_assertion_error(e)
                     })?;
 
                 let user_handle = input
                     .credential
                     .get_user_unique_id()
-                    .ok_or(CoreError::WebAuthnChallengeFailed)?;
+                    .ok_or(CoreError::WebAuthnUnknownCredential)?;
 
                 let (user, _) = self
                     .resolve_webauthn_credential(
@@ -1707,7 +1724,7 @@ where
                 let user_handle = input
                     .credential
                     .get_user_unique_id()
-                    .ok_or(CoreError::WebAuthnChallengeFailed)?;
+                    .ok_or(CoreError::WebAuthnUnknownCredential)?;
 
                 let cred_id_bytes: &[u8] = input.credential.raw_id.as_ref();
 
@@ -1717,7 +1734,7 @@ where
 
                 let passkey = match credential.credential_data {
                     CredentialData::WebAuthn { credential } => Passkey::from(*credential),
-                    _ => return Err(CoreError::WebAuthnChallengeFailed),
+                    _ => return Err(CoreError::InternalServerError),
                 };
 
                 let dk: DiscoverableKey = passkey.into();
@@ -1725,7 +1742,7 @@ where
                     .finish_discoverable_authentication(&input.credential, da, &[dk])
                     .map_err(|e| {
                         error!("Error during discoverable authentication: {e:?}");
-                        CoreError::WebAuthnChallengeFailed
+                        passkey_assertion_error(e)
                     })?;
 
                 (auth_result, user)
@@ -1745,7 +1762,7 @@ where
         }
 
         if !auth_result.user_verified() {
-            return Err(CoreError::WebAuthnChallengeFailed);
+            return Err(CoreError::WebAuthnInvalidAssertion);
         }
 
         self.record_remember_me(&mut auth_session, input.remember_me)
@@ -6360,7 +6377,7 @@ mod tests {
         };
 
         assert!(
-            matches!(error, CoreError::WebAuthnChallengeFailed),
+            matches!(error, CoreError::WebAuthnUnknownCredential),
             "the claimed user handle must be rejected as a failed challenge: {error:?}"
         );
     }
@@ -6585,13 +6602,176 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn passkey_options_report_unknown_user_without_hiding_repository_failures() {
+        let realm = create_test_realm_with_name("passkey-realm");
+        let caller = create_test_user_with_email(&realm, "caller@example.com");
+        for outcome in ["missing", "foreign", "no-credentials", "repository-error"] {
+            let mut builder = TridentTestBuilder::new().with_realm_and_user(&realm, &caller);
+            let mut returned_user = caller.clone();
+            if outcome == "foreign" {
+                returned_user.realm_id = RealmId::from(Uuid::new_v4());
+            }
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_find_by_username()
+                .returning(move |_, _| {
+                    let user = returned_user.clone();
+                    Box::pin(async move {
+                        match outcome {
+                            "repository-error" => Err(CoreError::InternalServerError),
+                            "missing" => Ok(None),
+                            _ => Ok(Some(user)),
+                        }
+                    })
+                });
+            if outcome == "no-credentials" {
+                Arc::get_mut(&mut builder.credential_repo)
+                    .unwrap()
+                    .expect_get_webauthn_public_key_credentials()
+                    .returning(|_| Box::pin(async { Ok(vec![]) }));
+            }
+            let session_code = Uuid::new_v4();
+            expect_session_of(&mut builder, &realm, session_code);
+            Arc::get_mut(&mut builder.auth_session_repo)
+                .unwrap()
+                .expect_save_webauthn_challenge()
+                .never();
+            let result = builder
+                .build()
+                .passkey_request_options(PasskeyRequestOptionsInput {
+                    realm_name: realm.name.clone(),
+                    session_code: session_code.to_string(),
+                    username: Some(caller.username.clone()),
+                    rp_info: passkey_rp_info(),
+                })
+                .await;
+            match outcome {
+                "repository-error" => {
+                    assert!(matches!(result, Err(CoreError::InternalServerError)))
+                }
+                _ => assert!(
+                    matches!(result, Err(CoreError::WebAuthnUnknownUser)),
+                    "{outcome}"
+                ),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn passkey_credential_lookup_hides_foreign_accounts_but_not_repository_failures() {
+        let realm = create_test_realm_with_name("passkey-realm");
+        let owner = create_test_user_with_email(&realm, "owner@example.com");
+        for outcome in [
+            "missing",
+            "foreign",
+            "wrong-owner",
+            "user-store-error",
+            "credential-store-error",
+        ] {
+            let mut builder = TridentTestBuilder::new();
+            let mut returned_user = owner.clone();
+            if outcome == "foreign" {
+                returned_user.realm_id = RealmId::from(Uuid::new_v4());
+            }
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_get_by_id()
+                .returning(move |_| {
+                    let user = returned_user.clone();
+                    Box::pin(async move {
+                        match outcome {
+                            "missing" => Err(CoreError::NotFound),
+                            "user-store-error" => Err(CoreError::InternalServerError),
+                            _ => Ok(Unscoped::new(user)),
+                        }
+                    })
+                });
+            if matches!(outcome, "wrong-owner" | "credential-store-error") {
+                Arc::get_mut(&mut builder.credential_repo)
+                    .unwrap()
+                    .expect_get_webauthn_credential_by_credential_id_and_user()
+                    .returning(move |_, _| {
+                        Box::pin(async move {
+                            if outcome == "credential-store-error" {
+                                Err(CredentialError::GetUserCredentialsError)
+                            } else {
+                                Ok(None)
+                            }
+                        })
+                    });
+            }
+            let result = builder
+                .build()
+                .resolve_webauthn_credential(
+                    b"credential-id",
+                    owner.id.as_bytes(),
+                    &RealmScope::from_realm(realm.clone()),
+                )
+                .await;
+            match outcome {
+                "user-store-error" | "credential-store-error" => {
+                    assert!(matches!(result, Err(CoreError::InternalServerError)))
+                }
+                _ => assert!(
+                    matches!(result, Err(CoreError::WebAuthnUnknownCredential)),
+                    "{outcome}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn passkey_assertion_errors_distinguish_counter_signature_and_challenge_failures() {
+        let webauthn = build_webauthn_client(passkey_rp_info()).unwrap();
+        let key = passkey_signing_key();
+        let credential_id = b"counter-credential";
+        for scenario in ["counter", "signature", "challenge"] {
+            let mut credential = webauthn_credential_for(credential_id, &key);
+            if scenario == "counter" {
+                credential.counter = 10;
+            }
+            let (options, state) = webauthn
+                .start_passkey_authentication(&[Passkey::from(credential)])
+                .unwrap();
+            let challenge = if scenario == "challenge" {
+                b"wrong-challenge".as_slice()
+            } else {
+                options.public_key.challenge.as_slice()
+            };
+            let mut assertion =
+                signed_passkey_assertion(challenge, credential_id, &key, Uuid::new_v4());
+            if scenario == "signature" {
+                assertion.response.signature = vec![0; 70].into();
+            }
+            let error = webauthn
+                .finish_passkey_authentication(&assertion, &state)
+                .expect_err("invalid proof must fail");
+            let reason = passkey_assertion_error(error);
+            match scenario {
+                "counter" => assert!(matches!(reason, CoreError::WebAuthnCounterRegression)),
+                "signature" => assert!(matches!(reason, CoreError::WebAuthnInvalidAssertion)),
+                "challenge" => assert!(matches!(reason, CoreError::WebAuthnChallengeFailed)),
+                _ => unreachable!(),
+            }
+        }
+        assert!(matches!(
+            passkey_assertion_error(WebauthnError::InvalidRPOrigin),
+            CoreError::WebAuthnInvalidAssertion
+        ));
+        assert!(matches!(
+            passkey_assertion_error(WebauthnError::CredentialNotFound),
+            CoreError::WebAuthnUnknownCredential
+        ));
+    }
+
+    #[tokio::test]
     async fn username_assisted_passkey_refuses_a_different_user_handle() {
         let realm = create_test_realm_with_name("passkey-realm");
         let owner = create_test_user_with_email(&realm, "owner@example.com");
         let result =
             passkey_login_with_handle(&realm, owner, vec![], false, Some(Some(Uuid::new_v4())))
                 .await;
-        assert!(matches!(result, Err(CoreError::WebAuthnChallengeFailed)));
+        assert!(matches!(result, Err(CoreError::WebAuthnUnknownCredential)));
     }
 
     #[test]
@@ -6776,10 +6956,10 @@ mod tests {
         let named = caller.clone();
         Arc::get_mut(&mut builder.user_repo)
             .unwrap()
-            .expect_get_by_username()
+            .expect_find_by_username()
             .returning(move |_, _| {
                 let user = named.clone();
-                Box::pin(async move { Ok(user) })
+                Box::pin(async move { Ok(Some(user)) })
             });
 
         expect_one_enrolled_passkey(&mut builder, caller.id, b"passkey-options-credential");
@@ -6819,10 +6999,10 @@ mod tests {
         let named = caller.clone();
         Arc::get_mut(&mut builder.user_repo)
             .unwrap()
-            .expect_get_by_username()
+            .expect_find_by_username()
             .returning(move |_, _| {
                 let user = named.clone();
-                Box::pin(async move { Ok(user) })
+                Box::pin(async move { Ok(Some(user)) })
             });
         expect_one_enrolled_passkey(&mut builder, caller.id, b"reauth-passkey");
         let loaded = session.clone();

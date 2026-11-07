@@ -283,7 +283,7 @@ impl UserRepository for PostgresUserRepository {
             .await
             .map_err(|e| {
                 error!("error retrieving user by username: {:?}", e);
-                CoreError::NotFound
+                CoreError::InternalServerError
             })?;
 
         found
@@ -327,7 +327,7 @@ impl UserRepository for PostgresUserRepository {
             .await
             .map_err(|e| {
                 error!("Error retrieving user by ID: {:?}", e);
-                CoreError::NotFound
+                CoreError::InternalServerError
             })?;
 
         let (user_model, realm_model) =

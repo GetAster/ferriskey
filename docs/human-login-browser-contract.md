@@ -91,6 +91,29 @@ when applicable. Both issue the same action cookie when another step is needed.
 Handle the empty passkey `login_url` by rendering the returned actions, not by
 navigating to an empty URL.
 
+## Passkey sign-in errors
+
+Use the stable JSON `reason` rather than matching message text. No reason reveals
+whether an account or credential exists in another realm, and a shared WebAuthn
+RP hostname does not make credentials valid across realms.
+
+| HTTP status / reason | Meaning and recovery |
+| --- | --- |
+| `401 unknown_user` | Named sign-in has no eligible account/passkey in this realm. Offer email sign-in to this realm, rather than repeating the same passkey request. |
+| `401 unknown_credential` | The selected credential does not belong to the account/realm for this ceremony. Choose another passkey or use email sign-in. |
+| `401 credential_counter_regression` | The authenticator counter failed the library's consistency check. Use another sign-in method; repeatedly requesting a challenge does not repair credential state. This alone is not proof that a physical authenticator was cloned. |
+| `401 webauthn_invalid_assertion` | The assertion failed cryptographic or ceremony validation, such as signature, origin, RP identity or user verification. Do not report this as an unknown account or a completed login. |
+| `webauthn_missing_challenge` / `webauthn_challenge_failed` | No usable challenge remains, or it expired. Request fresh options in a live login transaction. |
+
+A missing, stale or foreign-realm authentication-session cookie remains a
+transaction error (`session_not_found` / `invalid_session`), not `unknown_user`.
+Restart authorization for the intended realm in that case; do not diagnose the
+typed account from a session error.
+
+These errors preserve the realm, ownership, signature and counter checks. They do
+not migrate old spike credentials into the Aster realm. Database/service failures
+remain server errors rather than being disguised as missing accounts.
+
 ## Required actions and email verification
 
 | Method and path | Input/proof | Result |
@@ -196,6 +219,23 @@ the code at `/protocol/openid-connect/token` with its PKCE verifier and applicab
 client authentication. The human page must not exchange that client's code or
 replace its redirect URI. An error, remaining required action, or consent screen
 is not completion.
+
+## Console callback across tabs
+
+The console is itself an OAuth public client. Its PKCE verifier and exact
+redirect URI are stored by random state in origin-local browser storage, with a
+ten-minute expiry, so an email link can finish in a new tab on the same origin.
+Reading the record removes it; abandoned records are cleaned up when starting
+another flow. The server's single-use authorization code remains authoritative
+because browser storage read/remove is not atomic across tabs. In-flight records from the previous session-storage implementation require a
+fresh login after deployment; they lack the expiry required by the new format.
+
+The callback checks state, verifier format, expiry and its exact callback URL
+before token exchange. Missing or invalid transaction data starts a fresh login;
+it never exchanges a code with an undefined verifier. Callback errors, logout and
+session-expiry entry into human login pages use full document navigation so the
+server can route the realm to aster-idp's screens. Successful in-console navigation
+continues to use the application router.
 
 ## Social provider continuation
 

@@ -16,6 +16,7 @@ import { useLocaleSync } from './hooks/use-locale'
 import { authStore } from './store/auth.store'
 import PageAuthentication from './pages/authentication/page-authentication'
 import IamApp from './iam-app'
+import { navigateToLogin } from './lib/login-navigation'
 
 declare global {
   interface Window {
@@ -227,11 +228,11 @@ function AppRoutes() {
     const clientId = urlParams.get('client_id')
     const redirectUri = urlParams.get('redirect_uri')
 
-    if (isLoading || pathname.includes('/authentication/callback') || (clientId && redirectUri))
+    if (isLoading || pathname.includes('/authentication/callback') || (authenticateRoute && clientId && redirectUri))
       return
     if (!isAuthenticated && !authenticateRoute) {
       if (!pathname.includes('authentication/login')) {
-        navigate(`/realms/${loginRealm}/authentication/login`, { replace: true })
+        navigateToLogin(loginRealm)
       }
     } else if (
       isAuthenticated &&
@@ -259,16 +260,9 @@ function AppRoutes() {
               <div className='h-screen flex items-center justify-center text-gray-500'>
                 <BasicSpinner />
               </div>
-            ) : (
-              <Navigate
-                to={
-                  isAuthenticated
-                    ? `/realms/${currentRealm}/overview`
-                    : `/realms/${loginRealm}/authentication/login`
-                }
-                replace
-              />
-            )
+            ) : isAuthenticated ? (
+              <Navigate to={`/realms/${currentRealm}/overview`} replace />
+            ) : null
           }
         />
         <Route
@@ -278,16 +272,9 @@ function AppRoutes() {
               <div className='h-screen flex items-center justify-center text-gray-500'>
                 <BasicSpinner />
               </div>
-            ) : (
-              <Navigate
-                to={
-                  isAuthenticated
-                    ? `/realms/${currentRealm}/overview`
-                    : `/realms/${loginRealm}/authentication/login`
-                }
-                replace
-              />
-            )
+            ) : isAuthenticated ? (
+              <Navigate to={`/realms/${currentRealm}/overview`} replace />
+            ) : null
           }
         />
       </Routes>
