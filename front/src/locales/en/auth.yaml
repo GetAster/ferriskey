@@ -291,3 +291,15 @@ step_up:
   description: This application requires a recent passkey sign-in.
   authenticate: Use a passkey
   expired_hint: If this sign-in has expired, return to the application and start again.
+
+connect_provider:
+  title: Confirm the connection
+  generic_provider: this sign-in provider
+  description: 'This email address already belongs to an account. Check your email for a link to connect {{provider}} to that account.'
+  browser_hint: Open the email link in this browser to continue.
+  confirmation_hint: Only confirm if you want this provider identity to be able to sign in to your account.
+  decline: Do not connect
+  declining: Closing request…
+  decline_failed: Could not close this request. Please try again.
+  closed_title: Request closed
+  closed_description: You can close this tab. To sign in again, return to the app you started from.

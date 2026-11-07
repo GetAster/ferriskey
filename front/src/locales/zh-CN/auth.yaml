@@ -322,3 +322,15 @@ step_up:
   description: 此应用要求近期使用通行密钥登录。
   authenticate: 使用通行密钥
   expired_hint: 如果此次登录已过期，请返回应用并重新开始。
+
+connect_provider:
+  title: 确认关联
+  generic_provider: 此登录服务
+  description: '此邮箱地址已属于一个账户。请查看邮件，通过邮件中的链接将 {{provider}} 关联到该账户。'
+  browser_hint: 请在当前浏览器中打开邮件链接以继续。
+  confirmation_hint: 只有在您希望允许此服务的身份登录您的账户时，才确认关联。
+  decline: 不关联
+  declining: 正在关闭请求…
+  decline_failed: 无法关闭此请求，请重试。
+  closed_title: 请求已关闭
+  closed_description: 您可以关闭此标签页。如需重新登录，请返回最初发起登录的应用。
