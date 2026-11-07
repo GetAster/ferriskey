@@ -38,6 +38,8 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 | 8 | `feat/embedded-service-account-v0.10.2` | Trusted atomic service-account provisioning, idempotent by realm/client id. Creates a secretless confidential client and linked user, optional existing scopes and immutable attributes in one transaction. Existing incompatible/disabled/locked accounts and removed permissions are refused, never repaired; concurrent creation yields one account. Based on row 7 topic `127d4690`; topic `660941c7`, integrated `48ec9de8`. | Not submitted. |
 
-The local patched line now contains rows 6–8 at `48ec9de8ea41cb4728aa12c417cb55b273bc1124`. These commits are not a new release tag or deployment. Validation: real PostgreSQL builder and issuance tests, lifecycle cancellation tests, and token-exchange regressions; the aster-idp Salvo integration proof is recorded in the internal embedding plan.
+| 9 | `feat/host-api-exports-v0.10.2` | Re-export the existing AuthService trait and CoreError from ferriskey-api so embedded hosts can fetch realm keys and handle errors without a direct core dependency. No behavior changes. Based on row 8 topic `660941c7`; topic `2a511e1d`, integrated `4e3781da`. | Not submitted. |
+
+The local patched line now contains rows 6–9 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. These commits are not a new release tag or deployment. Validation: real PostgreSQL builder and issuance tests, lifecycle cancellation tests, and token-exchange regressions; the aster-idp Salvo integration proof is recorded in the internal embedding plan.
 
 Planned patches are not listed here until they land.
