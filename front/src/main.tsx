@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
@@ -8,6 +8,8 @@ import './lib/i18n'
 import { authStore } from './store/auth.store'
 import { initialLoginRealm } from './lib/initial-login'
 import { navigateToLogin } from './lib/login-navigation'
+import { authenticationRequirementRedirect } from './lib/authentication-requirements'
+import { followServerRedirect } from './lib/follow-server-redirect'
 
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -16,10 +18,16 @@ const container = document.getElementById('root') || (document.createElement('di
 const root = createRoot(container)
 
 const queryClient = new QueryClient({
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      const target = authenticationRequirementRedirect(error, window.location.pathname)
+      if (target) followServerRedirect(target)
+    },
+  }),
   defaultOptions: {
     queries: {
       retry: false,
-      refetchOnWindowFocus: false
+      refetchOnWindowFocus: false,
     },
   },
 })
@@ -29,12 +37,10 @@ const DISABLE_REACT_QUERY_DEVTOOLS = import.meta.env.VITE_DISABLE_REACT_QUERY_DE
 const render = (
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      {!DISABLE_REACT_QUERY_DEVTOOLS && (
-        <ReactQueryDevtools initialIsOpen={false} />
-      )}
+      {!DISABLE_REACT_QUERY_DEVTOOLS && <ReactQueryDevtools initialIsOpen={false} />}
 
       <BrowserRouter>
-        <ThemeProvider defaultTheme='dark' storageKey='ferriskey-ui-theme'>
+        <ThemeProvider defaultTheme="dark" storageKey="ferriskey-ui-theme">
           <App />
         </ThemeProvider>
       </BrowserRouter>
@@ -47,7 +53,7 @@ const render = (
 const loginRealm = initialLoginRealm(
   window.location.pathname,
   authStore.getState(),
-  authStore.persist?.hasHydrated?.() ?? true,
+  authStore.persist?.hasHydrated?.() ?? true
 )
 if (loginRealm !== null) {
   navigateToLogin(loginRealm)

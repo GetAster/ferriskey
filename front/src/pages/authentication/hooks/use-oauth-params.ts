@@ -9,6 +9,7 @@ export function useOAuthParams() {
   const clientId = searchParams.get('client_id')
   const redirectUri = searchParams.get('redirect_uri')
   const loginError = searchParams.get('login_error')
+  const passkeyRequired = searchParams.get('passkey_required') === 'true'
   const sessionExpired = searchParams.get('session_expired') === '1'
 
   const currentRealm = realm_name ?? 'master'
@@ -24,7 +25,8 @@ export function useOAuthParams() {
     redirectUri.includes('/realms/') &&
     !redirectUri.includes(`/realms/${currentRealm}/`)
 
-  const isAuthInitiated = Boolean(clientId && redirectUri) && !isRedirectUriStale
+  const isAuthInitiated =
+    passkeyRequired || (Boolean(clientId && redirectUri) && !isRedirectUriStale)
 
   const getAuthParamsFromUrl = useCallback(() => {
     const resolvedClientId = clientId ?? 'security-admin-console'
@@ -69,6 +71,7 @@ export function useOAuthParams() {
   return {
     realm_name,
     sessionExpired,
+    passkeyRequired,
     isAuthInitiated,
     loginError,
     getAuthParamsFromUrl,

@@ -36,7 +36,7 @@ function extractRealm(url: URL): string | null {
 async function refreshSession(
   baseUrl: URL,
   realm: string,
-  refreshToken: string,
+  refreshToken: string
 ): Promise<{ access_token: string; refresh_token: string; id_token?: string }> {
   const tokenUrl = new URL(`/realms/${realm}${TOKEN_ENDPOINT_SEGMENT}`, baseUrl)
   const body = new URLSearchParams({
@@ -117,6 +117,7 @@ export const fetcher: Fetcher['fetch'] = async (input) => {
   // request with the new access token. Skip the dance when:
   //   - the request that 401'd was the token endpoint itself (refresh of a
   //     refresh would loop forever)
+  //   - this is a cookie-bound login action (its one-use proof must not replay)
   //   - we have no refresh token to spend
   //   - we can't figure out the realm (extremely unlikely — it is stored with
   //     the session, and every API endpoint lives under /realms/<name>/)
@@ -126,19 +127,21 @@ export const fetcher: Fetcher['fetch'] = async (input) => {
   // The shared `authRefreshController` de-dupes concurrent attempts so a
   // page that fires 12 parallel queries on mount only triggers one refresh.
   const isTokenEndpoint = input.url.pathname.includes(TOKEN_ENDPOINT_SEGMENT)
-  if (response.status === 401 && !isTokenEndpoint) {
+  if (response.status === 401 && !isTokenEndpoint && !isLoginAction) {
     const { refreshToken, sessionRealm } = authStore.getState()
     const realm = sessionRealm ?? extractRealm(input.url)
     if (refreshToken && realm) {
       try {
         const refreshed = await authRefreshController.run(realm, () =>
-          refreshSession(input.url, realm, refreshToken),
+          refreshSession(input.url, realm, refreshToken)
         )
-        authStore.getState().setTokens(
-          refreshed.access_token,
-          refreshed.refresh_token,
-          refreshed.id_token ?? authStore.getState().idToken,
-        )
+        authStore
+          .getState()
+          .setTokens(
+            refreshed.access_token,
+            refreshed.refresh_token,
+            refreshed.id_token ?? authStore.getState().idToken
+          )
         response = await execute(refreshed.access_token)
       } catch (refreshError) {
         // Refresh failed: clear local tokens so the auth-guard redirects
@@ -172,7 +175,7 @@ export const fetcher: Fetcher['fetch'] = async (input) => {
     }
 
     const error: Error & { status?: number; data?: Record<string, unknown> } = new Error(
-      errorMessageFromBody(errorBody) ?? `HTTP ${response.status}: ${response.statusText}`,
+      errorMessageFromBody(errorBody) ?? `HTTP ${response.status}: ${response.statusText}`
     )
     error.status = response.status
     error.data = errorBody
