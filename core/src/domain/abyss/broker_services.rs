@@ -35,6 +35,8 @@ use crate::domain::user::entities::{RequiredAction, User};
 use crate::domain::user::ports::UserRepository;
 use crate::domain::user::value_objects::CreateUserRequest;
 
+const MICROSOFT_TENANT_ISSUER: &str = "https://login.microsoftonline.com/{tenantid}/v2.0";
+
 const ID_TOKEN_ALGORITHMS: &[jsonwebtoken::Algorithm] = &[
     jsonwebtoken::Algorithm::RS256,
     jsonwebtoken::Algorithm::RS384,
@@ -370,15 +372,19 @@ fn verify_id_token_against_jwks(
         return Err(CoreError::InvalidIdToken);
     }
 
-    let jwk = match header.kid.as_deref() {
-        Some(kid) => jwk_set.find(kid),
-        None => jwk_set.keys.first(),
+    let key_index = match header.kid.as_deref() {
+        Some(kid) => jwk_set
+            .keys
+            .iter()
+            .position(|key| key.common.key_id.as_deref() == Some(kid)),
+        None => (!jwk_set.keys.is_empty()).then_some(0),
     }
     .ok_or_else(|| {
         warn!("no JWKS key matches the id_token header");
         CoreError::InvalidIdToken
     })?;
 
+    let jwk = &jwk_set.keys[key_index];
     if let Some(key_alg) = jwk.common.key_algorithm
         && key_alg.to_string() != format!("{:?}", header.alg)
     {
@@ -392,7 +398,13 @@ fn verify_id_token_against_jwks(
     })?;
 
     let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.set_issuer(&[issuer]);
+    if issuer == MICROSOFT_TENANT_ISSUER {
+        // Verify the signature first, then bind the signed tenant to both the
+        // configured issuer and the selected key's Microsoft issuer scope.
+        validation.iss = None;
+    } else {
+        validation.set_issuer(&[issuer]);
+    }
     validation.set_audience(&[audience]);
     validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
     validation.validate_exp = true;
@@ -404,6 +416,23 @@ fn verify_id_token_against_jwks(
         })?;
 
     let claims = data.claims;
+    if issuer == MICROSOFT_TENANT_ISSUER {
+        let tenant = microsoft_tenant(&claims)?;
+        let expected_issuer = MICROSOFT_TENANT_ISSUER.replace("{tenantid}", tenant);
+        let key_issuer = jwks["keys"][key_index]["issuer"]
+            .as_str()
+            .ok_or(CoreError::InvalidIdToken)?;
+        let expected_key_issuer = if key_issuer == MICROSOFT_TENANT_ISSUER {
+            expected_issuer.as_str()
+        } else {
+            key_issuer
+        };
+        if claims["iss"].as_str() != Some(expected_issuer.as_str())
+            || expected_key_issuer != expected_issuer
+        {
+            return Err(CoreError::InvalidIdToken);
+        }
+    }
 
     if let Some(azp) = claims.get("azp")
         && azp.as_str() != Some(audience)
@@ -421,6 +450,37 @@ fn verify_id_token_against_jwks(
     }
 
     Ok(claims)
+}
+
+// Require one canonical representation, not UUID URNs, braces or compact hex.
+fn microsoft_tenant(claims: &serde_json::Value) -> Result<&str, CoreError> {
+    let tenant = claims["tid"].as_str().ok_or(CoreError::InvalidIdToken)?;
+    let parsed = Uuid::parse_str(tenant).map_err(|_| CoreError::InvalidIdToken)?;
+    if parsed.to_string() != tenant {
+        return Err(CoreError::InvalidIdToken);
+    }
+    Ok(tenant)
+}
+
+fn user_info_for_provider(
+    claims: serde_json::Value,
+    issuer: Option<&str>,
+) -> Result<BrokeredUserInfo, CoreError> {
+    let tenant = if issuer == Some(MICROSOFT_TENANT_ISSUER) {
+        Some(microsoft_tenant(&claims)?.to_owned())
+    } else {
+        None
+    };
+    let mut info = user_info_from_claims(claims)?;
+    if let Some(tenant) = tenant {
+        // A fixed-width canonical tenant plus an encoded subject is unambiguous.
+        // The provider ID remains the outer namespace in the link repository.
+        info.subject = format!(
+            "{tenant}:{}",
+            URL_SAFE_NO_PAD.encode(info.subject.as_bytes())
+        );
+    }
+    Ok(info)
 }
 
 fn user_info_from_claims(claims: serde_json::Value) -> Result<BrokeredUserInfo, CoreError> {
@@ -1059,7 +1119,13 @@ where
                 .verify_id_token(id_token, config, expected_nonce)
                 .await?;
 
-            return user_info_from_claims(claims);
+            return user_info_for_provider(claims, config.issuer.as_deref());
+        }
+
+        // Microsoft tenant-independent identity requires the verified tenant and
+        // subject from an ID token; generic userinfo cannot establish that pair.
+        if config.issuer.as_deref() == Some(MICROSOFT_TENANT_ISSUER) {
+            return Err(CoreError::InvalidIdToken);
         }
 
         // Fall back to userinfo endpoint
@@ -1157,6 +1223,213 @@ mod tests {
         let mut base = claims(serde_json::json!({}));
         base.as_object_mut().expect("object").remove(name);
         base
+    }
+
+    const TENANT: &str = "11111111-2222-3333-4444-555555555555";
+    const PERSONAL_TENANT: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
+
+    fn microsoft_claims(tenant: &str) -> serde_json::Value {
+        claims(serde_json::json!({
+            "tid": tenant,
+            "iss": MICROSOFT_TENANT_ISSUER.replace("{tenantid}", tenant),
+        }))
+    }
+
+    fn verify_microsoft(
+        key: &IdpKey,
+        claims: serde_json::Value,
+    ) -> Result<serde_json::Value, CoreError> {
+        verify_id_token_against_jwks(
+            &sign(key, "kid-1", claims),
+            &key.jwks,
+            MICROSOFT_TENANT_ISSUER,
+            AUDIENCE,
+            Some("the-nonce"),
+        )
+    }
+
+    #[test]
+    fn microsoft_accepts_organizational_and_personal_tokens_with_scoped_keys() {
+        let mut key = idp_key("kid-1");
+        for tenant in [TENANT, PERSONAL_TENANT] {
+            for issuer in [
+                MICROSOFT_TENANT_ISSUER.to_owned(),
+                MICROSOFT_TENANT_ISSUER.replace("{tenantid}", tenant),
+            ] {
+                key.jwks["keys"][0]["issuer"] = serde_json::json!(issuer);
+                let verified = verify_microsoft(&key, microsoft_claims(tenant)).unwrap();
+                assert_eq!(verified["tid"], tenant);
+            }
+        }
+    }
+
+    #[test]
+    fn microsoft_rejects_invalid_tenants_and_issuer_mismatches() {
+        let mut key = idp_key("kid-1");
+        key.jwks["keys"][0]["issuer"] = serde_json::json!(MICROSOFT_TENANT_ISSUER);
+        for tenant in [
+            serde_json::Value::Null,
+            serde_json::json!(42),
+            serde_json::json!("not-a-guid"),
+            serde_json::json!("11111111222233334444555555555555"),
+            serde_json::json!("{11111111-2222-3333-4444-555555555555}"),
+            serde_json::json!("9188040D-6C67-4C5B-B112-36A304B66DAD"),
+        ] {
+            let mut claims = microsoft_claims(TENANT);
+            claims["tid"] = tenant;
+            assert!(verify_microsoft(&key, claims).is_err());
+        }
+        for issuer in [
+            serde_json::Value::Null,
+            serde_json::json!(MICROSOFT_TENANT_ISSUER),
+            serde_json::json!(MICROSOFT_TENANT_ISSUER.replace("{tenantid}", PERSONAL_TENANT)),
+            serde_json::json!(format!("https://evil.example/{TENANT}/v2.0")),
+        ] {
+            let mut claims = microsoft_claims(TENANT);
+            claims["iss"] = issuer;
+            assert!(verify_microsoft(&key, claims).is_err());
+        }
+    }
+
+    #[test]
+    fn microsoft_requires_selected_key_issuer_scope() {
+        let mut key = idp_key("kid-1");
+        for issuer in [
+            serde_json::Value::Null,
+            serde_json::json!(42),
+            serde_json::json!(MICROSOFT_TENANT_ISSUER.replace("{tenantid}", PERSONAL_TENANT)),
+            serde_json::json!("https://evil.example/{tenantid}/v2.0"),
+        ] {
+            key.jwks["keys"][0]["issuer"] = issuer;
+            assert!(verify_microsoft(&key, microsoft_claims(TENANT)).is_err());
+        }
+        // A different key's suitable issuer must not authorize the selected key.
+        let mut decoy = key.jwks["keys"][0].clone();
+        decoy["kid"] = serde_json::json!("decoy");
+        decoy["issuer"] = serde_json::json!(MICROSOFT_TENANT_ISSUER);
+        key.jwks["keys"].as_array_mut().unwrap().insert(0, decoy);
+        assert!(verify_microsoft(&key, microsoft_claims(TENANT)).is_err());
+        key.jwks["keys"][1]["issuer"] = serde_json::json!(MICROSOFT_TENANT_ISSUER);
+        assert!(verify_microsoft(&key, microsoft_claims(TENANT)).is_ok());
+    }
+
+    #[test]
+    fn microsoft_retains_signature_audience_nonce_and_expiry_validation() {
+        let mut key = idp_key("kid-1");
+        key.jwks["keys"][0]["issuer"] = serde_json::json!(MICROSOFT_TENANT_ISSUER);
+        for (name, value) in [
+            ("aud", serde_json::json!("other-client")),
+            ("azp", serde_json::json!("other-client")),
+            ("nonce", serde_json::json!("other-login")),
+            (
+                "exp",
+                serde_json::json!((Utc::now() - Duration::hours(1)).timestamp()),
+            ),
+        ] {
+            let mut claims = microsoft_claims(TENANT);
+            claims[name] = value;
+            assert!(verify_microsoft(&key, claims).is_err());
+        }
+        let impostor = idp_key("kid-1");
+        assert!(
+            verify_id_token_against_jwks(
+                &sign(&impostor, "kid-1", microsoft_claims(TENANT)),
+                &key.jwks,
+                MICROSOFT_TENANT_ISSUER,
+                AUDIENCE,
+                Some("the-nonce")
+            )
+            .is_err()
+        );
+    }
+
+    struct NoOAuthRequests;
+    impl OAuthClient for NoOAuthRequests {
+        async fn exchange_code(
+            &self,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: &str,
+            _: Option<&str>,
+        ) -> Result<OAuthTokenResponse, CoreError> {
+            panic!("unexpected code exchange")
+        }
+        async fn fetch_userinfo(&self, _: &str, _: &str) -> Result<BrokeredUserInfo, CoreError> {
+            panic!("unexpected userinfo fallback")
+        }
+        async fn fetch_jwks(&self, _: &str) -> Result<serde_json::Value, CoreError> {
+            panic!("unexpected JWKS request")
+        }
+    }
+
+    #[tokio::test]
+    async fn microsoft_cannot_fall_back_to_userinfo_without_verified_tenant() {
+        use crate::domain::client::ports::{MockClientRepository, MockRedirectUriRepository};
+        use crate::domain::realm::ports::MockRealmRepository;
+        use crate::domain::user::ports::MockUserRepository;
+        use ferriskey_abyss::identity_provider::{
+            broker::ports::{MockBrokerAuthSessionRepository, MockIdentityProviderLinkRepository},
+            ports::MockIdentityProviderRepository,
+        };
+
+        // No mock accepts any request: in particular, userinfo must never run.
+        let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+        let service = BrokerServiceImpl::new(
+            Arc::new(MockRealmRepository::new()),
+            Arc::new(MockIdentityProviderRepository::new()),
+            Arc::new(MockBrokerAuthSessionRepository::new()),
+            Arc::new(MockIdentityProviderLinkRepository::new()),
+            Arc::new(MockClientRepository::new()),
+            Arc::new(MockRedirectUriRepository::new()),
+            Arc::new(MockUserRepository::new()),
+            Arc::new(MockAuthSessionRepository::new()),
+            Arc::new(NoOAuthRequests),
+            Arc::new(MockLoginAdmissionPort::new()),
+            FlowRecorder::new(sender),
+        );
+        let config: OAuthProviderConfig = serde_json::from_value(serde_json::json!({
+            "client_id": AUDIENCE, "client_secret": "test", "authorization_url": "https://idp.example/authorize",
+            "token_url": "https://idp.example/token", "userinfo_url": "https://idp.example/userinfo",
+            "jwks_url": "https://idp.example/keys", "scopes": ["openid"], "issuer": MICROSOFT_TENANT_ISSUER,
+        })).unwrap();
+        let response = OAuthTokenResponse {
+            access_token: "test".into(),
+            token_type: "Bearer".into(),
+            expires_in: None,
+            refresh_token: None,
+            id_token: None,
+            scope: None,
+        };
+        assert!(matches!(
+            service
+                .extract_user_info(&config, &response, Some("the-nonce"))
+                .await,
+            Err(CoreError::InvalidIdToken)
+        ));
+    }
+
+    #[test]
+    fn microsoft_link_identity_is_tenant_scoped_and_generic_subject_is_unchanged() {
+        let first = user_info_for_provider(microsoft_claims(TENANT), Some(MICROSOFT_TENANT_ISSUER))
+            .unwrap();
+        let second = user_info_for_provider(
+            microsoft_claims(PERSONAL_TENANT),
+            Some(MICROSOFT_TENANT_ISSUER),
+        )
+        .unwrap();
+        assert_ne!(first.subject, second.subject);
+        assert_eq!(
+            first.subject,
+            format!("{TENANT}:{}", URL_SAFE_NO_PAD.encode("idp-user-1"))
+        );
+        let generic = user_info_for_provider(microsoft_claims(TENANT), Some(ISSUER)).unwrap();
+        assert_eq!(generic.subject, "idp-user-1");
+        assert!(
+            user_info_for_provider(claims(serde_json::json!({})), Some(MICROSOFT_TENANT_ISSUER))
+                .is_err()
+        );
     }
 
     #[test]
