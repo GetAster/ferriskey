@@ -239,6 +239,14 @@ impl From<CoreError> for ApiError {
             CoreError::WebAuthnChallengeFailed => {
                 Self::Unauthorized("Webauthn challenged failed. A new one must be requested to retry.".into())
             }
+            CoreError::WebAuthnUnknownUser => Self::Unauthorized(
+                "No passkey sign-in is available for this account here. Use another sign-in method.".into()),
+            CoreError::WebAuthnUnknownCredential => Self::Unauthorized(
+                "This passkey is not registered to this account here. Choose another passkey or use another sign-in method.".into()),
+            CoreError::WebAuthnCounterRegression => Self::Unauthorized(
+                "The passkey counter did not advance. Use another sign-in method and replace this passkey.".into()),
+            CoreError::WebAuthnInvalidAssertion => Self::Unauthorized(
+                "The passkey response could not be verified. Start a new sign-in attempt.".into()),
             CoreError::MagicLinkNotEnabled => {
                 Self::BadRequest("Magic link authentication is not enabled for this realm".into())
             }
@@ -621,6 +629,44 @@ mod tests {
 
     async fn body_of(error: CoreError) -> Value {
         serialized_error(ApiError::from(error).into_response()).await
+    }
+
+    #[tokio::test]
+    async fn passkey_failures_have_stable_reasons_and_keep_challenge_compatibility() {
+        for (error, status, reason) in [
+            (CoreError::WebAuthnUnknownUser, 401, "unknown_user"),
+            (
+                CoreError::WebAuthnUnknownCredential,
+                401,
+                "unknown_credential",
+            ),
+            (
+                CoreError::WebAuthnCounterRegression,
+                401,
+                "credential_counter_regression",
+            ),
+            (
+                CoreError::WebAuthnInvalidAssertion,
+                401,
+                "webauthn_invalid_assertion",
+            ),
+            (
+                CoreError::WebAuthnMissingChallenge,
+                400,
+                "webauthn_missing_challenge",
+            ),
+            (
+                CoreError::WebAuthnChallengeFailed,
+                401,
+                "webauthn_challenge_failed",
+            ),
+        ] {
+            let response = ApiError::from(error).into_response();
+            assert_eq!(response.status().as_u16(), status);
+            let body = serialized_error(response).await;
+            assert_eq!(body["reason"], reason);
+            assert!(!body["message"].as_str().unwrap().contains("cloned"));
+        }
     }
 
     #[test]

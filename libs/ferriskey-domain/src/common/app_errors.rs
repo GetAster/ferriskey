@@ -263,6 +263,18 @@ pub enum CoreError {
     #[error("Webauthn challenge failed")]
     WebAuthnChallengeFailed,
 
+    #[error("No passkey sign-in is available for this account in this realm")]
+    WebAuthnUnknownUser,
+
+    #[error("This passkey is not registered to this account in this realm")]
+    WebAuthnUnknownCredential,
+
+    #[error("The passkey signature counter did not advance")]
+    WebAuthnCounterRegression,
+
+    #[error("The passkey assertion could not be verified")]
+    WebAuthnInvalidAssertion,
+
     #[error("Magic link not enabled for this realm")]
     MagicLinkNotEnabled,
 
@@ -545,6 +557,10 @@ impl CoreError {
             CoreError::WebAuthnMissingChallenge => "webauthn_missing_challenge",
             CoreError::WebAuthnCredentialNotFound => "webauthn_credential_not_found",
             CoreError::WebAuthnChallengeFailed => "webauthn_challenge_failed",
+            CoreError::WebAuthnUnknownUser => "unknown_user",
+            CoreError::WebAuthnUnknownCredential => "unknown_credential",
+            CoreError::WebAuthnCounterRegression => "credential_counter_regression",
+            CoreError::WebAuthnInvalidAssertion => "webauthn_invalid_assertion",
             CoreError::MagicLinkNotEnabled => "magic_link_not_enabled",
             CoreError::InvalidMagicLink => "invalid_magic_link",
             CoreError::MagicLinkExpired => "magic_link_expired",
@@ -833,6 +849,16 @@ mod tests {
                 CoreError::WebAuthnChallengeFailed,
                 "webauthn_challenge_failed",
             ),
+            (CoreError::WebAuthnUnknownUser, "unknown_user"),
+            (CoreError::WebAuthnUnknownCredential, "unknown_credential"),
+            (
+                CoreError::WebAuthnCounterRegression,
+                "credential_counter_regression",
+            ),
+            (
+                CoreError::WebAuthnInvalidAssertion,
+                "webauthn_invalid_assertion",
+            ),
             (CoreError::MagicLinkNotEnabled, "magic_link_not_enabled"),
             (CoreError::InvalidMagicLink, "invalid_magic_link"),
             (CoreError::MagicLinkExpired, "magic_link_expired"),
@@ -997,7 +1023,7 @@ mod tests {
 
     #[test]
     fn reason_codes_cover_every_variant() {
-        assert_eq!(every_variant_with_expected_reason().len(), 135);
+        assert_eq!(every_variant_with_expected_reason().len(), 139);
     }
 
     #[test]

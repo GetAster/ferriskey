@@ -1,12 +1,13 @@
 import { useDevicePreview, useDeviceVerify } from '@/api/device.api'
 import { Form } from '@/components/ui/form'
 import { useAuth } from '@/hooks/use-auth'
+import { navigateToLogin } from '@/lib/login-navigation'
 import { apiErrorMessage } from '@/lib/api-error'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate, useParams } from 'react-router'
+import { useLocation, useParams } from 'react-router'
 import { toast } from 'sonner'
 import type {
   DeviceVerifySchema} from '../schemas/device-verify.schema'
@@ -41,7 +42,6 @@ export default function PageDeviceVerifyFeature() {
   const { t } = useTranslation(AUTH_NAMESPACE)
   const realm = realm_name ?? 'master'
   const location = useLocation()
-  const navigate = useNavigate()
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
 
   const prefill = useMemo(() => {
@@ -104,7 +104,7 @@ export default function PageDeviceVerifyFeature() {
           // sessionStorage disabled (private mode, quota) — the user will
           // just land on /overview after login. Acceptable degradation.
         }
-        navigate(`/realms/${realm}/authentication/login`, { replace: true })
+        navigateToLogin(realm)
         return
       }
 

@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
 import PageCallback from '../ui/page-callback'
-import { buildLoginErrorRedirect, validateCallbackParams } from './callback-helpers'
+import { validateCallbackParams } from './callback-helpers'
+import { navigateToLogin } from '@/lib/login-navigation'
 import { apiErrorMessage } from '@/lib/api-error'
 import { POST_LOGIN_RETURN_KEY } from './page-device-verify-feature'
 import { takeOAuthFlow } from '../utils/pkce'
@@ -56,9 +57,10 @@ export default function PageCallbackFeature() {
   // Read storage once at mount to avoid a React StrictMode double-render
   // causing the value to be missing on the second render after the first effect
   // removes it. Keyed by the returned state so concurrent flows don't collide.
-  const [expectedState] = useState(() =>
-    state ? localStorage.getItem(`oauth_state:${state}`) : null
-  )
+  const [expectedState] = useState(() => {
+    try { return state ? localStorage.getItem(`oauth_state:${state}`) : null }
+    catch { return null }
+  })
 
   const callbackValidationError = useMemo(() => {
     return validateCallbackParams({
@@ -69,26 +71,28 @@ export default function PageCallbackFeature() {
   }, [code, state, expectedState])
 
   useEffect(() => {
+    if (hasStartedExchange.current) return
+    hasStartedExchange.current = true
+    try { if (state) localStorage.removeItem(`oauth_state:${state}`) } catch { /* fail closed below */ }
     if (callbackValidationError) {
-      if (state) localStorage.removeItem(`oauth_state:${state}`)
       takeOAuthFlow(state)
       document.cookie = 'FERRISKEY_SESSION=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;'
-      navigate(buildLoginErrorRedirect(realm_name, t(`callback.${callbackValidationError}`)), {
-        replace: true,
-      })
+      navigateToLogin(realm_name, t(`callback.${callbackValidationError}`))
       return
     }
 
-    if (!code || hasStartedExchange.current) {
+    if (!code) {
       return
     }
 
-    hasStartedExchange.current = true
-    if (state) localStorage.removeItem(`oauth_state:${state}`)
 
     // The console is a public client: the token endpoint accepts the code only
     // with the matching PKCE verifier and the exact redirect_uri used at /auth.
-    const flow = takeOAuthFlow(state)
+    const flow = takeOAuthFlow(state, `${window.location.origin}${window.location.pathname}`)
+    if (!flow) {
+      navigateToLogin(realm_name, t('callback.invalid_state'))
+      return
+    }
 
     void exchangeToken({
       realm: realm_name ?? 'master',
@@ -96,8 +100,8 @@ export default function PageCallbackFeature() {
         client_id: 'security-admin-console',
         code,
         grant_type: GrantType.Code,
-        code_verifier: flow?.codeVerifier,
-        redirect_uri: flow?.redirectUri,
+        code_verifier: flow.codeVerifier,
+        redirect_uri: flow.redirectUri,
       },
     })
       .then((data) => {
@@ -109,7 +113,7 @@ export default function PageCallbackFeature() {
       .catch((error: unknown) => {
         const message = apiErrorMessage(error, t('callback.failed'))
         document.cookie = 'FERRISKEY_SESSION=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/;'
-        navigate(buildLoginErrorRedirect(realm_name, message), { replace: true })
+        navigateToLogin(realm_name, message)
       })
   }, [callbackValidationError, code, exchangeToken, navigate, realm_name, setAuthTokens, state, t])
 

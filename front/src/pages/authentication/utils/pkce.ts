@@ -35,33 +35,55 @@ export async function deriveCodeChallenge(codeVerifier: string): Promise<string>
   return base64UrlEncode(new Uint8Array(digest))
 }
 
-export function storeOAuthFlow(state: string, flow: OAuthFlow): void {
+// Shared by tabs on this origin: email links can open a fresh tab. Records
+// expire after ten minutes and are removed when read. Authorization codes are
+// also single-use server-side (localStorage read/remove is not atomic).
+export const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000
+
+function parseFlow(raw: string): OAuthFlow | null {
   try {
-    sessionStorage.setItem(`${FLOW_STORAGE_PREFIX}${state}`, JSON.stringify(flow))
+    const value = JSON.parse(raw)
+    if (!value || typeof value !== 'object' ||
+      typeof value.codeVerifier !== 'string' ||
+      !/^[A-Za-z0-9._~-]{43,128}$/.test(value.codeVerifier) ||
+      typeof value.redirectUri !== 'string' || !value.redirectUri) return null
+    if (typeof value.expiresAt !== 'number' ||
+      !Number.isFinite(value.expiresAt) || value.expiresAt <= Date.now() ||
+      value.expiresAt > Date.now() + OAUTH_FLOW_TTL_MS) return null
+    return { codeVerifier: value.codeVerifier, redirectUri: value.redirectUri }
   } catch {
-    // Storage unavailable (private mode, quota): the token exchange will fail
-    // closed on a missing verifier rather than silently dropping PKCE.
+    return null
   }
 }
 
-// Reads and removes the flow record: a verifier is single-use, like the code.
-export function takeOAuthFlow(state: string | null): OAuthFlow | null {
+export function storeOAuthFlow(state: string, flow: OAuthFlow): void {
+  try {
+    // Bound abandoned records without disturbing unrelated browser storage.
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i)
+      if (key?.startsWith(FLOW_STORAGE_PREFIX) &&
+        !parseFlow(localStorage.getItem(key) ?? '')) {
+        localStorage.removeItem(key)
+        localStorage.removeItem(`oauth_state:${key.slice(FLOW_STORAGE_PREFIX.length)}`)
+      }
+    }
+    localStorage.setItem(`${FLOW_STORAGE_PREFIX}${state}`, JSON.stringify({
+      ...flow, expiresAt: Date.now() + OAUTH_FLOW_TTL_MS,
+    }))
+  } catch {
+    // Storage unavailable: callback rejects the missing flow before exchange.
+  }
+}
+
+export function takeOAuthFlow(state: string | null, expectedRedirectUri?: string): OAuthFlow | null {
   if (!state) return null
   const key = `${FLOW_STORAGE_PREFIX}${state}`
   try {
-    const raw = sessionStorage.getItem(key)
-    sessionStorage.removeItem(key)
-    if (!raw) return null
-    const parsed: unknown = JSON.parse(raw)
-    if (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as OAuthFlow).codeVerifier === 'string' &&
-      typeof (parsed as OAuthFlow).redirectUri === 'string'
-    ) {
-      return parsed as OAuthFlow
-    }
-    return null
+    const raw = localStorage.getItem(key)
+    localStorage.removeItem(key)
+    const flow = raw !== null ? parseFlow(raw) : null
+    if (flow && expectedRedirectUri !== undefined && flow.redirectUri !== expectedRedirectUri) return null
+    return flow
   } catch {
     return null
   }

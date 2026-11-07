@@ -4,10 +4,11 @@ import type { RouterParams } from '@/routes/router'
 import { authStore } from '@/store/auth.store'
 import userStore from '@/store/user.store'
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router'
+import { useParams } from 'react-router'
 import type { IUser, OrganizationClaim } from '@/contracts/states.interface'
 import { translate } from '@/lib/i18n'
 import { realmFromIssuer } from '@/lib/session-realm'
+import { navigateToLogin } from '@/lib/login-navigation'
 import { authRefreshController } from './auth-refresh-controller'
 
 type JwtPayload = {
@@ -76,7 +77,6 @@ function sessionRealm(accessToken: string | null, fallback: string): string {
 }
 
 export function useAuth() {
-  const navigate = useNavigate()
   const { realm_name = 'master' } = useParams<RouterParams>()
   //const { setAuthTokens, setAuthenticated, setLoading, access_token, refresh_token, expiration, isAuthenticated, isLoading } = userStore()
   const {
@@ -143,18 +143,10 @@ export function useAuth() {
       setLoading(false)
 
       if (redirectToLogin) {
-        const params = new URLSearchParams()
-        if (errorMessage) {
-          params.set('login_error', errorMessage)
-        }
-
-        const suffix = params.toString()
-        navigate(`/realms/${authRealm}/authentication/login${suffix ? `?${suffix}` : ''}`, {
-          replace: true,
-        })
+        navigateToLogin(authRealm, errorMessage)
       }
     },
-    [navigate, authRealm, setAuthenticated, setExpiration, setLoading, setTokens, setUser]
+    [authRealm, setAuthenticated, setExpiration, setLoading, setTokens, setUser]
   )
 
   function isTokenExpired(): boolean {
