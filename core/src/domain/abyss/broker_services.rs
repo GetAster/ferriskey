@@ -10,7 +10,7 @@ use ferriskey_compass::{
 };
 use rand::RngExt;
 use sha2::{Digest, Sha256};
-use tracing::{error, instrument, warn};
+use tracing::{error, info, instrument, warn};
 use uuid::Uuid;
 
 use crate::domain::abyss::identity_provider::broker::{
@@ -234,6 +234,10 @@ where
         access_token: Option<&str>,
     ) -> Result<(User, bool, Option<ProviderLinkIntent>), CoreError> {
         let realm_id = scope.id();
+        let log_branch = |branch: &str| {
+            info!(provider = %idp.get().alias, branch,
+                "broker identity resolution");
+        };
 
         // 1. Check if user is already linked to this IdP
         if let Some(link) = self
@@ -260,6 +264,7 @@ where
                     .await?;
             }
 
+            log_branch("linked");
             return Ok((user, false, None));
         }
 
@@ -273,6 +278,7 @@ where
         {
             self.create_idp_link(&user, idp, user_info, access_token)
                 .await?;
+            log_branch("auto_link_by_email");
             return Ok((user, false, None));
         }
 
@@ -295,6 +301,7 @@ where
                 family_name: user_info.family_name.clone(),
                 remember_me: false,
             };
+            log_branch("pending_connection");
             return Ok((user, false, Some(intent)));
         }
 
@@ -320,6 +327,7 @@ where
         self.create_idp_link(&user, idp, user_info, access_token)
             .await?;
 
+        log_branch("new_user");
         Ok((user, true, None))
     }
 
@@ -502,6 +510,14 @@ fn pending_connection_session(
         || original.code.is_some()
         || original.user_id.is_some_and(|id| id != user_id)
     {
+        warn!(
+            reason = "pending_connection_session_unusable",
+            expired = original.expires_at <= Utc::now(),
+            authenticated = original.authenticated,
+            code_issued = original.code.is_some(),
+            different_user = original.user_id.is_some_and(|id| id != user_id),
+            "refusing broker callback"
+        );
         return Err(CoreError::InvalidSession);
     }
     original.id = crate::domain::common::generate_uuid_v7();
@@ -851,7 +867,7 @@ where
         };
 
         // 7. Create broker session
-        let request = CreateBrokerAuthSessionRequest {
+        let mut request = CreateBrokerAuthSessionRequest {
             realm_id: scope.id().into(),
             identity_provider_id: idp.id.into(),
             client_id: client.id,
@@ -868,6 +884,23 @@ where
             expires_at: broker_session_expiry(resumed.as_ref(), Utc::now()),
         };
 
+        if let Some(original) = &resumed {
+            // The login page deliberately carries only routing hints. The saved
+            // authorization request remains authoritative for this transaction.
+            request.redirect_uri = original.redirect_uri.clone();
+            request.response_type = original
+                .response_type
+                .clone()
+                .ok_or(CoreError::InvalidSession)?;
+            request.scope = original.scope.clone().unwrap_or_default();
+            request.state = original.state.clone();
+            request.nonce = original.nonce.clone();
+            request.code_challenge = original.code_challenge.clone();
+            request.code_challenge_method = original
+                .code_challenge_method
+                .as_ref()
+                .map(ToString::to_string);
+        }
         let broker_session = self.broker_session_repository.create(request).await?;
 
         // 8. Build IdP authorization URL
@@ -884,7 +917,7 @@ where
             if oauth_config.apple.is_some() {
                 Some(&broker_state)
             } else {
-                input.nonce.as_deref()
+                broker_session.nonce.as_deref()
             },
         );
 
@@ -1078,6 +1111,10 @@ where
             let verified = self
                 .verify_id_token(id_token, &oauth_config, expected_nonce)
                 .await?;
+            info!(provider = %idp.get().alias,
+                email_verified_present = verified.get("email_verified").is_some(),
+                email_verified_boolean = ?verified.get("email_verified").and_then(serde_json::Value::as_bool),
+                "verified broker ID token email assurance");
             let issuer = verified["iss"].as_str().map(str::to_owned);
             let subject = verified["sub"].as_str().map(str::to_owned);
             let authenticated_at = verified
@@ -1161,12 +1198,42 @@ where
                     .await?
                     .in_realm(&scope)?
                     .into_inner();
-                if original.client_id != session.client_id
-                    || original.redirect_uri != session.redirect_uri
-                    || original.state != session.state
-                    || original.nonce != session.nonce
-                    || original.code_challenge != session.code_challenge
-                {
+                let mismatched_field = [
+                    (original.client_id != session.client_id, "client_id"),
+                    (
+                        original.redirect_uri != session.redirect_uri,
+                        "redirect_uri",
+                    ),
+                    (original.state != session.state, "state"),
+                    (original.nonce != session.nonce, "nonce"),
+                    (
+                        original.code_challenge != session.code_challenge,
+                        "code_challenge",
+                    ),
+                    (
+                        original
+                            .code_challenge_method
+                            .as_ref()
+                            .map(ToString::to_string)
+                            != session.code_challenge_method,
+                        "code_challenge_method",
+                    ),
+                    (
+                        original.response_type.as_deref() != Some(session.response_type.as_str()),
+                        "response_type",
+                    ),
+                    (
+                        original.scope.as_deref().unwrap_or_default() != session.scope,
+                        "scope",
+                    ),
+                ]
+                .into_iter()
+                .find_map(|(mismatch, field)| mismatch.then_some(field));
+                if let Some(field) = mismatched_field {
+                    warn!(
+                        reason = "broker_transaction_mismatch",
+                        field, "refusing broker callback"
+                    );
                     return Err(CoreError::InvalidSession);
                 }
                 pending = pending_connection_session(original, user.id, session.expires_at)?;
@@ -1823,10 +1890,15 @@ mod tests {
         original.user_session_id = Some(Uuid::new_v4());
         original.consent_token_hash = Some("previous-consent".into());
         original.auth_evidence = Some(AuthenticationEvidence::new(AuthenticationProof::EmailLink));
-        original.auth_requirements = Some(ferriskey_domain::authentication::evidence::AuthenticationRequirements::parse(
-            Some(r#"{"id_token":{"acr":{"essential":true,"value":"phr"}}}"#),
-            None, Some(300), Utc::now().timestamp(),
-        ).unwrap());
+        original.auth_requirements = Some(
+            ferriskey_domain::authentication::evidence::AuthenticationRequirements::parse(
+                Some(r#"{"id_token":{"acr":{"essential":true,"value":"phr"}}}"#),
+                None,
+                Some(300),
+                Utc::now().timestamp(),
+            )
+            .unwrap(),
+        );
         let deadline = Utc::now() + Duration::minutes(2);
         let pending = pending_connection_session(original.clone(), user, deadline).unwrap();
         assert_ne!(pending.id, original.id);
