@@ -10,6 +10,7 @@ import PageMagicLinkVerifyFeature from './feature/page-magic-link-verify-feature
 import PageMagicLinkRequestFeature from './feature/page-magic-link-request-feature'
 import PageEmailVerifiedFeature from './feature/page-email-verified-feature'
 import PageCheckYourEmail from './feature/page-check-your-email'
+import PageConnectIdentityProvider from './feature/page-connect-identity-provider'
 import PageDeviceVerifyFeature from './feature/page-device-verify-feature'
 import PageConsentFeature from './feature/page-consent-feature'
 import VerifyEmailRoute from './feature/verify-email-route'
@@ -117,6 +118,8 @@ export default function PageAuthentication() {
           </Portal>
         }
       />
+      {/* Connection proof has its own screen; it grants no login-action authority. */}
+      <Route path='/connect-identity-provider' element={<PageConnectIdentityProvider />} />
       {/* Routes without a portal page type render bare. */}
       <Route path='/callback' element={<PageCallbackFeature />} />
       <Route path='/required-action' element={<PageRequiredActionFeature />} />
