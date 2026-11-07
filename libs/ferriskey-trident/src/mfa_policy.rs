@@ -62,6 +62,18 @@ pub fn pending_auth_step(
     None
 }
 
+/// An optional enrollment offer, never a persisted required action.
+/// Callers present it only after mandatory login steps have been satisfied.
+pub fn should_offer_passkey(
+    settings: Option<&RealmSetting>,
+    verified_contact: bool,
+    has_passkey: bool,
+) -> bool {
+    settings.is_some_and(|s| s.passwordless_enabled && s.passkey_enabled)
+        && verified_contact
+        && !has_passkey
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +287,27 @@ mod tests {
                 RequiredAction::UpdatePassword
             ]))
         );
+    }
+}
+
+#[cfg(test)]
+mod passkey_offer_tests {
+    use super::*;
+    #[test]
+    fn offer_requires_both_realm_flags_verified_contact_and_no_existing_passkey() {
+        let mut settings = RealmSetting::new(
+            ferriskey_domain::realm::RealmId::new(uuid::Uuid::new_v4()),
+            None,
+        );
+        assert!(!should_offer_passkey(Some(&settings), true, false));
+        settings.passkey_enabled = true;
+        assert!(!should_offer_passkey(Some(&settings), true, false));
+        settings.passwordless_enabled = true;
+        assert!(should_offer_passkey(Some(&settings), true, false));
+        assert!(!should_offer_passkey(Some(&settings), true, true));
+        assert!(!should_offer_passkey(Some(&settings), false, false));
+        settings.passkey_enabled = false;
+        assert!(!should_offer_passkey(Some(&settings), true, false));
+        assert!(!should_offer_passkey(None, true, false));
     }
 }

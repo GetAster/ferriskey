@@ -2638,6 +2638,7 @@ dependencies = [
  "utoipa 5.4.0",
  "uuid",
  "webauthn-rs",
+ "webauthn-rs-proto",
  "x509-parser 0.18.1",
 ]
 

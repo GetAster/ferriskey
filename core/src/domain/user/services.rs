@@ -493,7 +493,18 @@ where
             .in_realm(&scope)?;
         self.ensure_can_manage_user(&identity, &realm, existing.get())
             .await?;
-        let is_being_disabled = existing.get().enabled && !input.enabled;
+        let enabled = input.enabled.unwrap_or(existing.get().enabled);
+        let is_being_disabled = existing.get().enabled && !enabled;
+        // This administrative endpoint accepts partial updates. An omitted/null
+        // field must not erase the account's verified contact or re-enable it.
+        let email = match input.email {
+            Some(email) => normalize_optional_email(Some(email)),
+            None => existing.get().email.clone(),
+        };
+        let email_verified = email.is_some()
+            && input
+                .email_verified
+                .unwrap_or_else(|| email == existing.get().email && existing.get().email_verified);
 
         if let Some(ref required_actions) = input.required_actions {
             if scope
@@ -532,11 +543,11 @@ where
                 &existing,
                 UpdateUserRequest {
                     username: None,
-                    email: normalize_optional_email(input.email),
-                    email_verified: input.email_verified.unwrap_or(false),
-                    enabled: input.enabled,
-                    firstname: input.firstname,
-                    lastname: input.lastname,
+                    email,
+                    email_verified,
+                    enabled,
+                    firstname: input.firstname.or_else(|| existing.get().firstname.clone()),
+                    lastname: input.lastname.or_else(|| existing.get().lastname.clone()),
                     required_actions: None,
                 },
             )
@@ -864,13 +875,14 @@ where
             _ => None,
         };
 
-        let email = normalize_optional_email(input.email);
+        let email = match input.email {
+            Some(email) => normalize_optional_email(Some(email)),
+            None => existing.get().email.clone(),
+        };
         if scope
             .settings()
             .is_some_and(|settings| settings.passwordless_enabled)
-            && email
-                .as_ref()
-                .is_some_and(|email| Some(email) != existing.get().email.as_ref())
+            && email != existing.get().email
         {
             return Err(CoreError::Forbidden(
                 "Changing contact email requires a verified email-change flow; profile editing cannot change it in a passwordless realm".into(),
@@ -878,10 +890,8 @@ where
         }
         // A changed email has not been verified under its new value, whatever
         // the old address's verification status was.
-        let email_verified = match &email {
-            Some(email) if Some(email) != existing.get().email.as_ref() => false,
-            _ => existing.get().email_verified,
-        };
+        let email_verified =
+            email.is_some() && email == existing.get().email && existing.get().email_verified;
 
         let enabled = existing.get().enabled;
 
@@ -890,8 +900,8 @@ where
                 &existing,
                 UpdateUserRequest {
                     username,
-                    firstname: input.firstname,
-                    lastname: input.lastname,
+                    firstname: input.firstname.or_else(|| existing.get().firstname.clone()),
+                    lastname: input.lastname.or_else(|| existing.get().lastname.clone()),
                     email,
                     email_verified,
                     enabled,
@@ -1697,7 +1707,7 @@ mod tests {
             lastname: Some("User".to_string()),
             email: Some("taken@example.com".to_string()), // Email belongs to another user
             email_verified: Some(true),
-            enabled: true,
+            enabled: Some(true),
             required_actions: None,
         };
 
@@ -1744,7 +1754,7 @@ mod tests {
             lastname: Some("User".to_string()),
             email: Some("myemail@example.com".to_string()), // Same email as before
             email_verified: Some(true),
-            enabled: true,
+            enabled: Some(true),
             required_actions: None,
         };
 
@@ -1792,7 +1802,7 @@ mod tests {
             lastname: Some("User".to_string()),
             email: Some("newemail@example.com".to_string()), // New unique email
             email_verified: Some(true),
-            enabled: true,
+            enabled: Some(true),
             required_actions: None,
         };
 
@@ -1801,6 +1811,103 @@ mod tests {
         assert!(result.is_ok());
         let updated_user = result.unwrap();
         assert_eq!(updated_user.email, Some("newemail@example.com".to_string()));
+    }
+
+    #[tokio::test]
+    async fn partial_admin_update_preserves_omitted_fields_and_resets_changed_email_verification() {
+        for (email, verification, expected_email, expected_verified) in [
+            (None, None, Some("alice@example.com"), true),
+            (
+                Some(" alice@example.com "),
+                None,
+                Some("alice@example.com"),
+                true,
+            ),
+            (
+                Some("new@example.com"),
+                None,
+                Some("new@example.com"),
+                false,
+            ),
+            (
+                Some("new@example.com"),
+                Some(true),
+                Some("new@example.com"),
+                true,
+            ),
+            (None, Some(false), Some("alice@example.com"), false),
+            (Some(""), Some(true), None, false),
+        ] {
+            let mut realm = create_test_realm_with_name("test-realm");
+            realm
+                .settings
+                .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+                .passwordless_enabled = true;
+            let identity = create_test_user_identity_with_realm(&realm);
+            let admin_id = identity.id();
+            let admin_role = create_admin_role(&realm);
+            let mut target = create_test_user_with_params_and_realm(
+                &realm,
+                "alice",
+                "alice@example.com".into(),
+                false,
+            );
+            target.firstname = Some("Alice".into());
+            target.lastname = Some("Example".into());
+            target.email_verified = true;
+            let target_id = target.id;
+            let mut builder = UserServiceTestBuilder::new()
+                .with_realm("test-realm".into(), realm)
+                .with_user_permissions(admin_id, vec![admin_role])
+                .with_unprivileged_target(target.clone())
+                .with_webhook_notify()
+                .with_user_access_revoked(target_id, 0);
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_update_user()
+                .withf(move |_, request| {
+                    request.firstname.as_deref() == Some("Alice")
+                        && request.lastname.as_deref() == Some("Example")
+                        && request.email.as_deref() == expected_email
+                        && request.email_verified == expected_verified
+                        && !request.enabled
+                })
+                .times(1)
+                .return_once(move |_, _| Box::pin(async move { Ok(target) }));
+            Arc::get_mut(&mut builder.credential_repo)
+                .unwrap()
+                .expect_get_credentials_by_user_id()
+                .times(1)
+                .return_once(|_| Box::pin(async { Ok(Vec::new()) }));
+            Arc::get_mut(&mut builder.user_required_action_repo)
+                .unwrap()
+                .expect_clear_required_actions()
+                .times(1)
+                .return_once(|_| Box::pin(async { Ok(0) }));
+            Arc::get_mut(&mut builder.user_required_action_repo)
+                .unwrap()
+                .expect_add_required_action()
+                .withf(|_, action| *action == RequiredAction::ConfigurePasskey)
+                .times(1)
+                .return_once(|_, _| Box::pin(async { Ok(()) }));
+            let result = builder
+                .build()
+                .update_user(
+                    identity,
+                    UpdateUserInput {
+                        realm_name: "test-realm".into(),
+                        user_id: target_id,
+                        firstname: None,
+                        lastname: None,
+                        email: email.map(str::to_string),
+                        email_verified: verification,
+                        enabled: None,
+                        required_actions: Some(vec!["configure_passkey".into()]),
+                    },
+                )
+                .await;
+            assert!(result.is_ok(), "{result:?}");
+        }
     }
 
     // ---- FK-004: the realm in the URL binds the target -----------------------
@@ -1844,7 +1951,7 @@ mod tests {
                     lastname: None,
                     email: Some("attacker@evil.example".to_string()),
                     email_verified: Some(true),
-                    enabled: true,
+                    enabled: Some(true),
                     required_actions: None,
                 },
             )
@@ -1891,7 +1998,7 @@ mod tests {
                     lastname: None,
                     email: None,
                     email_verified: Some(true),
-                    enabled: false,
+                    enabled: Some(false),
                     required_actions: None,
                 },
             )
@@ -1938,7 +2045,7 @@ mod tests {
                     lastname: None,
                     email: None,
                     email_verified: Some(true),
-                    enabled: true,
+                    enabled: Some(true),
                     required_actions: None,
                 },
             )
@@ -1983,7 +2090,7 @@ mod tests {
                     lastname: None,
                     email: None,
                     email_verified: Some(true),
-                    enabled: false,
+                    enabled: Some(false),
                     required_actions: None,
                 },
             )
@@ -2633,7 +2740,12 @@ mod tests {
     }
     #[tokio::test]
     async fn passwordless_profile_edit_cannot_replace_the_verified_contact() {
-        for email in [Some("new@example.com"), Some("alice@example.com"), None] {
+        for email in [
+            Some("new@example.com"),
+            Some(""),
+            Some("alice@example.com"),
+            None,
+        ] {
             let mut realm = create_test_realm_with_name("test-realm");
             realm
                 .settings
@@ -2653,7 +2765,7 @@ mod tests {
                 .unwrap()
                 .expect_get_by_id()
                 .return_once(move |_| Box::pin(async move { Ok(Unscoped::new(returned)) }));
-            let changed = email == Some("new@example.com");
+            let changed = matches!(email, Some("new@example.com" | ""));
             if changed {
                 Arc::get_mut(&mut builder.user_repo)
                     .unwrap()
@@ -2663,7 +2775,9 @@ mod tests {
                 Arc::get_mut(&mut builder.user_repo)
                     .unwrap()
                     .expect_update_user()
-                    .withf(|_, input| input.email_verified)
+                    .withf(|_, input| {
+                        input.email_verified && input.email.as_deref() == Some("alice@example.com")
+                    })
                     .return_once(move |_, _| Box::pin(async move { Ok(user) }));
             }
             let result = builder

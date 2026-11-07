@@ -54,6 +54,7 @@ pub async fn continue_login(
             step.auth_session_id.to_string(),
             webapp_url,
             step.second_factor_verified,
+            None,
         )
         .await?;
     let reply = LoginStepReply::new(progress, base_url.starts_with("https"))?;

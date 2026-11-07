@@ -246,9 +246,6 @@ impl AuthSessionRepository for PostgresAuthSessionRepository {
         &self,
         session_code: Uuid,
     ) -> Result<Option<WebAuthnChallenge>, AuthenticationError> {
-        // apparently this can be done in a single sql query with CTEs
-        // sea_orm doesn't support them well so two queries it will be
-
         let auth_session_model = crate::entity::auth_sessions::Entity::find()
             .filter(crate::entity::auth_sessions::Column::Id.eq(session_code))
             .one(&self.db)
@@ -260,13 +257,28 @@ impl AuthSessionRepository for PostgresAuthSessionRepository {
             .ok_or(AuthenticationError::NotFound)?;
 
         if let Some(challenge) = auth_session_model.webauthn_challenge.clone() {
-            let mut active: crate::entity::auth_sessions::ActiveModel = auth_session_model.into();
-
-            active.webauthn_challenge = Set(None);
-            active.update(&self.db).await.map_err(|e| {
-                error!("Error updating session: {e:?}");
-                AuthenticationError::InternalServerError
-            })?;
+            // Compare and clear the exact challenge read above. A concurrent
+            // claimant (or a replacement challenge) must not share this proof.
+            use crate::entity::auth_sessions::{Column, Entity};
+            let claimed = Entity::update_many()
+                .col_expr(
+                    Column::WebauthnChallenge,
+                    Expr::value(Option::<serde_json::Value>::None),
+                )
+                .filter(Column::Id.eq(session_code))
+                .filter(Column::WebauthnChallenge.eq(challenge.clone()))
+                .filter(Column::ExpiresAt.gt(Utc::now().naive_utc()))
+                .filter(Column::Authenticated.eq(false))
+                .filter(Column::Code.is_null())
+                .exec(&self.db)
+                .await
+                .map_err(|e| {
+                    error!("Error updating session: {e:?}");
+                    AuthenticationError::InternalServerError
+                })?;
+            if claimed.rows_affected != 1 {
+                return Ok(None);
+            }
 
             let challenge = serde_json::from_value(challenge).map_err(|e| {
                 error!("Error deserializing webauthn_challenge: {e:?}");
@@ -901,5 +913,45 @@ mod tests {
             .expect("the session belongs to the realm it was created in");
 
         assert!(!repo.claim_code(&scoped).await.expect("claim"));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn a_webauthn_challenge_can_be_claimed_only_once() {
+        let (repo, realm_id, client_id) = setup().await;
+        let session = repo
+            .create(&make_session(realm_id, client_id, false))
+            .await
+            .unwrap();
+        let origin = url::Url::parse("http://localhost:5555").unwrap();
+        let webauthn = webauthn_rs::prelude::WebauthnBuilder::new("localhost", &origin)
+            .unwrap()
+            .build()
+            .unwrap();
+        let (_, state) = webauthn.start_discoverable_authentication().unwrap();
+        repo.save_webauthn_challenge(
+            session.id,
+            WebAuthnChallenge::DiscoverableAuthentication(state),
+        )
+        .await
+        .unwrap();
+
+        let (first, second) = tokio::join!(
+            repo.take_webauthn_challenge(session.id),
+            repo.take_webauthn_challenge(session.id)
+        );
+        assert_eq!(
+            [first.unwrap(), second.unwrap()]
+                .into_iter()
+                .filter(Option::is_some)
+                .count(),
+            1
+        );
+        assert!(
+            repo.take_webauthn_challenge(session.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

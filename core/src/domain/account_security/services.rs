@@ -39,7 +39,8 @@ use crate::domain::account_security::ports::{
 };
 use crate::domain::trident::ports::OtpEnrollmentRepository;
 use crate::domain::trident::services::{
-    build_webauthn_client, generate_otpauth_uri, generate_secret, verify,
+    build_webauthn_client, generate_otpauth_uri, generate_secret, require_discoverable_passkey,
+    verify,
 };
 
 pub const ELEVATION_TTL_MINUTES: i64 = 5;
@@ -694,7 +695,7 @@ where
             .filter_map(|credential| credential.webauthn_credential_id)
             .collect::<Vec<CredentialID>>();
 
-        let (challenge, registration) = webauthn
+        let (mut challenge, registration) = webauthn
             .start_passkey_registration(
                 target,
                 user.get().email.as_deref().unwrap_or(""),
@@ -705,6 +706,8 @@ where
                 warn!(user_id = %target, "Failed to start a passkey registration: {e:?}");
                 CoreError::InternalServerError
             })?;
+
+        require_discoverable_passkey(&mut challenge);
 
         self.passkey_registration_repository
             .start(
@@ -2348,7 +2351,12 @@ mod tests {
             )
             .await;
 
-        assert!(started.is_ok(), "expected a challenge: {:?}", started.err());
+        let challenge = started.expect("expected a challenge");
+        let json = serde_json::to_value(challenge.0).unwrap();
+        let selection = &json["publicKey"]["authenticatorSelection"];
+        assert_eq!(selection["residentKey"], "required");
+        assert_eq!(selection["requireResidentKey"], true);
+        assert_eq!(selection["userVerification"], "required");
     }
 
     #[tokio::test]

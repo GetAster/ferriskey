@@ -25,7 +25,7 @@ pub struct UpdateUserResponse {
     path = "/{user_id}",
     tag = "user",
     summary = "Update a user in a realm",
-    description = "Updates an existing user in a specific realm. The user must exist and the request must include the necessary fields to update.",
+    description = "Updates supplied fields of an existing user in a specific realm. Omitted or null fields retain their current values. Changing email clears its verification unless email_verified is explicitly supplied.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
         ("user_id" = String, Path, description = "User ID"),
@@ -60,7 +60,7 @@ pub async fn update_user(
                 lastname: payload.lastname,
                 email: payload.email,
                 email_verified: payload.email_verified,
-                enabled: payload.enabled.unwrap_or(true),
+                enabled: payload.enabled,
                 required_actions: payload.required_actions,
             },
         )

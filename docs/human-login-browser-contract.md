@@ -99,6 +99,7 @@ navigating to an empty URL.
 | `POST /login-actions/webauthn-public-key-create` | Serialized creation credential JSON; action cookie | `{url? ,required_actions?}` and cookie continuation. |
 | `POST /login-actions/verify-email` | `{token}` from the verification email; no login cookie required | `{user_id,verified}`. Verifies the contact address, not the browser's identity. |
 | `POST /login-actions/resend-verification-email` | Valid action cookie; no body | `{message}`. Sends only for the authenticated pending user in this realm. An unsigned bearer payload is never accepted. |
+| `POST /login-actions/skip` | Valid action cookie and `{action:"configure_passkey"}` | Declines only the optional offer; returns `{url?,required_actions?}` like continue. Stored mandatory actions cannot be skipped. |
 | `POST /login-actions/continue` | Valid action cookie; no body | Re-reads pending actions and returns `{url?,required_actions?}`. Complete only when all server-side conditions are satisfied. |
 
 Verification tokens bind the exact address to which the email was sent. Consuming
@@ -125,6 +126,39 @@ The legacy verify-email UI stored client context locally, hardcoded
 `security-admin-console`, and returned to login. That is not the new protocol:
 use the existing authenticated transaction and `continue`. No localStorage or
 React router state is required by the API.
+
+## Optional passkey offer
+
+With both `passwordless_enabled` and `passkey_enabled`, a verified email-link or
+social sign-in offers `configure_passkey` when the account has no passkey. The
+server computes this after mandatory actions and any OTP proof; it never stores
+an extra required-action row. Passkey sign-in does not offer enrollment again.
+The page offers **Create a passkey** and **Maybe later**.
+
+Creation uses the existing action-cookie ceremony and requests a discoverable
+credential (`residentKey: "required"`, `requireResidentKey: true`) with
+`userVerification: "required"`. Successful creation returns the completion URL
+and sets the SSO cookie through the same completion path as other login actions;
+if consent is pending, follow that URL and finish consent first.
+
+**Maybe later** calls `POST /login-actions/skip` with
+`{"action":"configure_passkey"}`. The server rechecks the account and mandatory
+requirements. A stored `configure_passkey` action is mandatory and returns 403
+with reason `action_required`; keep the creation button and explain that this
+account needs a passkey. Other actions cannot be skipped. The optional offer is
+last, so successful skip completes this transaction or returns its consent URL.
+It consumes the action token: replaying skip or calling continue with the spent
+cookie fails. There is no saved decline; the next email/social sign-in offers
+again until a passkey exists. The next transaction gets its own cookie.
+
+Named passkey assertions may omit `userHandle`: their server-side challenge is
+bound to the selected account, and the credential must belong to that account.
+If a handle is supplied it must match, as required by [WebAuthn assertion verification](https://www.w3.org/TR/webauthn-3/#sctn-verifying-assertion). Discoverable assertions still require a
+valid handle. The browser never chooses the authoritative account at proof time.
+Sign-in proofs consume their server challenge atomically. Expired/completed
+transactions and challenges older than five minutes are refused; a failed proof
+requires fresh options. Existing non-discoverable credentials remain usable via
+named sign-in; making new credentials discoverable does not convert old ones.
 
 ## Registration
 
@@ -227,7 +261,7 @@ email remain supported.
 The source of truth is `libs/ferriskey-api-authentication/src/router.rs`,
 `libs/ferriskey-api-trident/src/router.rs`, their handlers, and
 `libs/ferriskey-api-core/src/{auth,login_step,sso_cookie}.rs`.
-The email continuation changes add one endpoint and no new cookie or
+The email continuation and optional offer add two endpoints (`continue` and `skip`) and no new cookie or
 browser-held credential. The realm policy adds `passwordless_enabled`; signup
 reuses `send-magic-link`. The implementation preserves the existing password
 flows for realms that do not enable this policy, including the master console.

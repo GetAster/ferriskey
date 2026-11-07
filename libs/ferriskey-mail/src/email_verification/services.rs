@@ -8,7 +8,9 @@ use tokio::time::timeout;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::email_template::entities::{insert_request_variables, interpolate_variables};
+use crate::email_template::entities::{
+    insert_request_variables, interpolate_variables, template_subject,
+};
 use crate::email_template::ports::{EmailTemplateRepository, TemplateRenderer};
 use ferriskey_domain::common::app_errors::CoreError;
 use ferriskey_domain::common::email::EmailPort;
@@ -138,7 +140,8 @@ where
         user: &ferriskey_domain::user::entities::User,
         user_agent: Option<&str>,
         extra_vars: &[(&str, &str)],
-    ) -> Result<String, CoreError> {
+        fallback_subject: &str,
+    ) -> Result<(String, String), CoreError> {
         let template = self
             .email_template_repository
             .get_by_id(scope.id().into(), template_id)
@@ -170,7 +173,10 @@ where
             variables.insert(key.to_string(), value.to_string());
         }
 
-        Ok(interpolate_variables(&html, &variables))
+        Ok((
+            template_subject(&structure, &variables, fallback_subject),
+            interpolate_variables(&html, &variables),
+        ))
     }
 }
 
@@ -260,7 +266,7 @@ where
             verification_link, expiration_label
         );
 
-        let html_body = self
+        let rendered = self
             .render_email_template(
                 &scope,
                 template_id,
@@ -270,19 +276,18 @@ where
                     ("verification_link", verification_link.as_str()),
                     ("expiration", expiration_label.as_str()),
                 ],
+                "Verify your email address",
             )
             .await
             .ok();
+        let (subject, html_body) = rendered
+            .map(|(subject, html)| (subject, Some(html)))
+            .unwrap_or_else(|| ("Verify your email address".to_string(), None));
 
         let delivery = timeout(
             EMAIL_DELIVERY_TIMEOUT,
-            self.email_port.send_email(
-                &smtp_config,
-                user_email,
-                "Verify your email address",
-                &body,
-                html_body,
-            ),
+            self.email_port
+                .send_email(&smtp_config, user_email, &subject, &body, html_body),
         )
         .await;
 
@@ -1164,7 +1169,10 @@ mod tests {
     #[tokio::test]
     async fn test_send_verification_email_custom_ttl() {
         let mut realm = test_realm();
-        let template = test_template(&realm);
+        let mut template = test_template(&realm);
+        template.structure["head"] = serde_json::json!({"type": "mj-head", "children": [
+            {"type": "mj-title", "content": "Verify your Aster email"}
+        ]});
         let smtp_config = test_smtp_config(&realm);
 
         let mut settings = RealmSetting::new(realm.id, Some("RS256".to_string()));
@@ -1227,7 +1235,7 @@ mod tests {
             .expect_send_email()
             .returning(|_, _, subject, body, _| {
                 // Verify "1 hour" singular form in the body
-                assert_eq!(subject, "Verify your email address");
+                assert_eq!(subject, "Verify your Aster email");
                 assert!(
                     body.contains("1 hour"),
                     "Body should contain '1 hour' singular form"
