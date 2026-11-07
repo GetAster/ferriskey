@@ -5,6 +5,9 @@ import { BrowserRouter } from 'react-router'
 import App from './App.tsx'
 import './index.css'
 import './lib/i18n'
+import { authStore } from './store/auth.store'
+import { initialLoginRealm } from './lib/initial-login'
+import { navigateToLogin } from './lib/login-navigation'
 
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { ThemeProvider } from './components/theme-provider.tsx'
@@ -39,4 +42,15 @@ const render = (
   </StrictMode>
 )
 
-root.render(render)
+// sessionStorage hydration is synchronous. Avoid mounting the console's dark
+// theme and waiting for API discovery when this entry already needs sign-in.
+const loginRealm = initialLoginRealm(
+  window.location.pathname,
+  authStore.getState(),
+  authStore.persist?.hasHydrated?.() ?? true,
+)
+if (loginRealm !== null) {
+  navigateToLogin(loginRealm)
+} else {
+  root.render(render)
+}
