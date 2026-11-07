@@ -20,7 +20,7 @@ use super::handlers::{
     update_protocol_mapper::{__path_update_protocol_mapper, update_protocol_mapper},
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -138,5 +138,5 @@ pub fn aegis_routes(state: AppState) -> Router<AppState> {
             ),
             delete(unassign_optional_scope),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

@@ -4,12 +4,12 @@ use crate::{
 };
 use axum::{Router, middleware};
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 pub fn abyss_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .merge(federation_routes(state.clone()))
         .merge(identity_provider_routes(state.clone()))
         .merge(identity_provider_link_routes(state.clone()))
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

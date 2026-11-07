@@ -2,7 +2,7 @@ pub mod application;
 pub mod args;
 
 pub mod embedded;
-pub use embedded::{FerriskeyApp, HostOptions, SchemaMigrations, build};
+pub use embedded::{AdminAdmission, FerriskeyApp, HostOptions, SchemaMigrations, build};
 
 pub use ferriskey_core::application::services::ApplicationService;
 /// Authentication operations available through the embedded application service.
@@ -19,3 +19,7 @@ pub use ferriskey_core::domain::authentication::service_account;
 pub use service_account::{
     EnsureServiceAccountError, EnsureServiceAccountInput, EnsureServiceAccountOutput,
 };
+
+/// Verified caller supplied to the host's administrative admission predicate.
+pub use ferriskey_core::domain::authentication::value_objects::Identity;
+pub use ferriskey_core::domain::realm::entities::RealmId;

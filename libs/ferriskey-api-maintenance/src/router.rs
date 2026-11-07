@@ -14,7 +14,7 @@ use super::handlers::remove_realm_whitelist_entry::{
 };
 use super::handlers::toggle_maintenance::{__path_toggle_maintenance, toggle_maintenance};
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 use axum::{
     Router, middleware,
@@ -83,5 +83,5 @@ pub fn maintenance_routes(state: AppState) -> Router<AppState> {
             ),
             delete(remove_realm_whitelist_entry),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }

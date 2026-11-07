@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use ferriskey_core::domain::authentication::value_objects::Identity;
+
 use axum::{
     RequestPartsExt,
     extract::{FromRef, FromRequestParts, Request, State},
@@ -29,6 +33,24 @@ use crate::login_step::{
     LOGIN_ACTION_COOKIE, LoginActionStep, LoginContinues, login_action_cookie,
 };
 use crate::url::FullUrl;
+
+/// Additional host admission for administrative routes, after normal token
+/// verification and before the handler's own permission checks. This cannot
+/// grant permissions. Keep the predicate synchronous and free of request I/O.
+/// `None` preserves FerrisKey's normal multi-realm administration.
+pub type AdminAdmission = Arc<dyn Fn(&Identity) -> bool + Send + Sync>;
+
+/// Apply the same host admission to mixed endpoints after identifying whether
+/// the operation is administrative. The identity must come from `auth`.
+pub fn admit_admin(policy: Option<&AdminAdmission>, identity: &Identity) -> Result<(), ApiError> {
+    if policy.is_some_and(|admit| !admit(identity)) {
+        return Err(ApiError::Forbidden(ApiErrorBody::new(
+            "Administrative access refused by the host",
+            "admin_admission_denied",
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Jwt {
@@ -156,7 +178,8 @@ async fn authorize(
     mut req: Request,
     next: Next,
     usage: TokenUsage,
-) -> Result<Response, StatusCode> {
+    administrative: bool,
+) -> Result<Response, Response> {
     let claims = jwt.claims;
 
     let output = state
@@ -168,8 +191,12 @@ async fn authorize(
             usage,
         })
         .await
-        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+        .map_err(|_| StatusCode::UNAUTHORIZED.into_response())?;
 
+    if administrative {
+        admit_admin(state.admin_admission.as_ref(), &output.identity)
+            .map_err(IntoResponse::into_response)?;
+    }
     req.extensions_mut().insert(output.identity);
 
     Ok(next.run(req).await)
@@ -181,8 +208,19 @@ pub async fn auth(
     jwt: Jwt,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    authorize(state, jwt, req, next, TokenUsage::ManagementApi).await
+) -> Result<Response, Response> {
+    authorize(state, jwt, req, next, TokenUsage::ManagementApi, false).await
+}
+
+/// Administrative router authentication: ordinary verification first, then
+/// optional host admission, then the unchanged handler authorization.
+pub async fn auth_admin(
+    State(state): State<AppState>,
+    jwt: Jwt,
+    req: Request,
+    next: Next,
+) -> Result<Response, Response> {
+    authorize(state, jwt, req, next, TokenUsage::ManagementApi, true).await
 }
 
 #[tracing::instrument(skip(state, jwt, req, next), fields(claims.sub = %jwt.claims.sub))]
@@ -191,8 +229,8 @@ pub async fn auth_any_client(
     jwt: Jwt,
     req: Request,
     next: Next,
-) -> Result<Response, StatusCode> {
-    authorize(state, jwt, req, next, TokenUsage::AnyClient).await
+) -> Result<Response, Response> {
+    authorize(state, jwt, req, next, TokenUsage::AnyClient, false).await
 }
 
 const AUTH_SESSION_COOKIE: &str = "FERRISKEY_SESSION";

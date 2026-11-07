@@ -43,6 +43,7 @@ async fn public_builder_migrates_serves_and_shuts_down_and_recovers_from_startup
     } = build(
         config.clone(),
         HostOptions {
+            admin_admission: None,
             metrics: None,
             schema_migrations: SchemaMigrations::Run,
         },

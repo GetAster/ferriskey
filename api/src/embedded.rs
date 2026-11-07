@@ -11,6 +11,7 @@ use ferriskey_core::domain::common::{
 use crate::application::http::server::{app_state::AppState, http_server::router_with_metrics};
 use crate::args::Args;
 
+pub use ferriskey_api_core::auth::AdminAdmission;
 pub use ferriskey_core::application::workers::ApplicationShutdown;
 
 /// Schema migration policy. Data migrations and application initialization always run.
@@ -30,6 +31,9 @@ pub struct HostOptions {
     /// `None` disables the FerrisKey metrics layer and metrics route.
     pub metrics: Option<(PrometheusMetricLayer<'static>, PrometheusHandle)>,
     pub schema_migrations: SchemaMigrations,
+    /// Optional additional gate for verified callers of administrative routes.
+    /// Account, self-service and public authentication routes are unaffected.
+    pub admin_admission: Option<AdminAdmission>,
 }
 
 /// The host mounts `router`, uses `service`, and retains the shutdown owner.
@@ -72,7 +76,9 @@ pub async fn build(config: Arc<Args>, options: HostOptions) -> Result<FerriskeyA
         for record in &report.applied {
             tracing::info!(version = record.version, name = %record.name, "data migration applied");
         }
-        router_with_metrics(AppState::new(config, service.clone()), options.metrics)
+        let mut state = AppState::new(config, service.clone());
+        state.admin_admission = options.admin_admission;
+        router_with_metrics(state, options.metrics)
     }
     .await;
 

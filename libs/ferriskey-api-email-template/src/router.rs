@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -69,7 +69,7 @@ pub fn email_template_routes(state: AppState) -> Router<AppState> {
             ),
             get(export_template),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin));
 
     let variables_routes = Router::new().route(
         &format!(

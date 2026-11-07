@@ -29,7 +29,7 @@ use super::handlers::upsert_smtp_config::{__path_upsert_smtp_config, upsert_smtp
 use axum::routing::{delete, get, post, put};
 use axum::{Router, middleware};
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::{auth, auth_admin};
 use utoipa::OpenApi;
 
 #[derive(OpenApi)]
@@ -56,7 +56,7 @@ use utoipa::OpenApi;
 pub struct RealmApiDoc;
 
 pub fn realm_routes(state: AppState) -> Router<AppState> {
-    Router::new()
+    let self_service = Router::new()
         .route(
             &format!(
                 "{}/realms/{{realm_name}}/users/@me/realms",
@@ -71,6 +71,9 @@ pub fn realm_routes(state: AppState) -> Router<AppState> {
             ),
             get(get_user_realm_settings),
         )
+        .layer(middleware::from_fn_with_state(state.clone(), auth));
+
+    Router::new()
         .route(
             &format!("{}/realms/{{realm_name}}", state.args.server.root_path),
             get(get_realm),
@@ -138,7 +141,8 @@ pub fn realm_routes(state: AppState) -> Router<AppState> {
             ),
             get(get_password_policy).put(update_password_policy),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
+        .merge(self_service)
         .route(
             &format!(
                 "{}/realms/{{realm_name}}/login-settings",

@@ -56,7 +56,7 @@ use super::handlers::{
     update_redirect_uri::{__path_update_redirect_uri, update_redirect_uri},
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -289,7 +289,7 @@ pub fn client_routes(state: AppState) -> Router<AppState> {
             ),
             delete(delete_saml_attribute_mapper),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }
 
 const REGISTRATION_BODY_LIMIT: usize = 16 * 1024;

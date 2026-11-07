@@ -4,7 +4,7 @@ use utoipa::OpenApi;
 
 use crate::handlers::get_security_events::{__path_get_security_events, get_security_events};
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::auth::auth;
+use ferriskey_api_core::auth::auth_admin;
 
 #[derive(OpenApi)]
 #[openapi(paths(get_security_events), components(schemas(SecurityEvent)))]
@@ -19,5 +19,5 @@ pub fn seawatch_router(state: AppState) -> Router<AppState> {
             ),
             get(get_security_events),
         )
-        .layer(middleware::from_fn_with_state(state.clone(), auth))
+        .layer(middleware::from_fn_with_state(state.clone(), auth_admin))
 }
