@@ -17,7 +17,7 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-6` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9631073846ea24cc2b1f107abc9d49a239778b02`. This release adds the console loading-screen repair (row 13) and includes all release -5 fixes. Before tagging, aster-idp passed 154 tests against this exact revision (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent will deploy -6 directly with the rebuilt console; deployed browser verification remains pending.
+`aster-ferriskey-v0.10.2-6` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9631073846ea24cc2b1f107abc9d49a239778b02`. This release adds the console loading-screen repair (row 13) and includes all release -5 fixes. Before tagging, aster-idp passed 154 tests against this exact revision (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent reports it live with rebuilt console in aster-idp `3e63259`, image `sha256:30738da4369f137b00949abc449b9cabcd19fde1a8dd336be6fe34217a52cf56`. Readiness returned 200, root serves the host landing page, and the passkey journey passed. The host reports the owner-approved disabling of realm aster's console client: new aster console authorization is refused, while a master administrator can sign in and list aster users. This does not revoke previously issued tokens or prevent static console HTML loading.
 
 Previous release: `aster-ferriskey-v0.10.2-5` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `0f79b498cfe187db9ed6177e4037d2a00b890212`. This release repairs passkey error reporting and cross-tab console login (row 12). Before tagging, aster-idp passed 154 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. The deployment agent reports it live with rebuilt console in aster-idp `4c4694c`, image `sha256:b4d249c51d23afa6881373d7300f2c77c45371d4d7be104a8dbdda3b4c306086`. Live checks confirmed the host landing page, foreign credential error, stale foreign session recovery and named passkey login reaching callback. Full new-tab application login verification is still pending.
 
@@ -30,7 +30,7 @@ Earlier release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, pub
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-6` | `96310738` | Deployment pending. |
+| `aster-ferriskey-v0.10.2-6` | `96310738` | aster-idp `3e63259`: `sha256:30738da4369f137b00949abc449b9cabcd19fde1a8dd336be6fe34217a52cf56`. |
 | `aster-ferriskey-v0.10.2-5` | `0f79b498` | aster-idp `4c4694c`: `sha256:b4d249c51d23afa6881373d7300f2c77c45371d4d7be104a8dbdda3b4c306086`. |
 | `aster-ferriskey-v0.10.2-4` | `01aa97d1` | aster-idp `67cd793`: `sha256:b5f04c543241bff992cad437d150e75eb574f8e1abd0724ff11f16fc85b4f9a0`. |
 | `aster-ferriskey-v0.10.2-3` | `b6b51c55` | aster-idp `a9e77e3`: `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. |
