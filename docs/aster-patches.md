@@ -17,11 +17,14 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. This release adds the embedded application builder, trusted issuance, atomic service-account provisioning and public host API exports. Before tagging, aster-idp `d737911` passed 151 tests and both explicit PostgreSQL smoke tests against this exact revision; default and no-default builds passed. The embedded host consumes the pinned Rust crate. The embedded revision was subsequently deployed inside aster-idp `54c8cf0` at the development instance on 2026-11-07. This is not a standalone FerrisKey API image release.
+`aster-ferriskey-v0.10.2-3` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `b6b51c55af2f5e37a5e457474427775e0c108c03`. This release adds opt-in passwordless realm policy and human browser login continuation (row 10). Before tagging, aster-idp's full suite passed 154 tests against this exact revision (2 real-binary smoke tests remained ignored). Image build and development deployment are in progress; deployment is not yet verified.
+
+Previous release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. This release adds the embedded application builder, trusted issuance, atomic service-account provisioning and public host API exports. Before tagging, aster-idp `d737911` passed 151 tests and both explicit PostgreSQL smoke tests against this exact revision; default and no-default builds passed. The embedded host consumes the pinned Rust crate. The embedded revision was subsequently deployed inside aster-idp `54c8cf0` at the development instance on 2026-11-07. This is not a standalone FerrisKey API image release.
 
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
+| `aster-ferriskey-v0.10.2-3` | `b6b51c55` | Image build/development deployment in progress; not yet verified. |
 | `aster-ferriskey-v0.10.2-2` | `4e3781da` | Embedded in deployed aster-idp `54c8cf0`; see the aster-idp deployment record for its image digest. |
 | `aster-ferriskey-v0.10.2-1` | `2508c406` | Not published. Image IDs: api `sha256:66ea5e2ea364e8fe7ab03e61c06a4c64c94e7dded46eb66c726a51d61441e7c5`, webapp `sha256:25d43e942ccb8b6becfcfcc326da79f9aeb92fa4414c9176b13d0bcfe2521b89` |
 
@@ -46,7 +49,7 @@ The published patched line contains rows 6–9 at `4e3781da9f311b7352b735f7df82b
 
 | 10 | `feat/passwordless-realms-v0.10.2` | Opt-in realm prohibition on local passwords, verified contact before human access, email-link signup without bootstrap credentials, cookie-bound recent authentication for passkey management, and required-action continuation for magic links/passkeys/social login. Email proof tokens bind the exact delivery address and consume atomically; portal requirements follow realm settings, browser contract documented, theme font stylesheet loaded. Based on row 9 integrated `4e3781da`; topic `fe8f6760`, integrated `b6b51c55`. | Not submitted. |
 
-Row 10 is published on the patched branch at `b6b51c55af2f5e37a5e457474427775e0c108c03`, awaiting aster-idp tests before the next immutable release tag. Validation: core 1,142 passed (173 database tests ignored by the ordinary unit run); mail 22; portal 22; explicit PostgreSQL policy/concurrency 2, email continuation/address-binding 2, passwordless signup 1, root-path compatibility 2 and legacy registration 6. Frontend TypeScript build and changed-file formatting passed. Independent review findings were fixed before publication.
+Row 10 is published on the patched branch at `b6b51c55af2f5e37a5e457474427775e0c108c03`, released as `aster-ferriskey-v0.10.2-3` after aster-idp passed 154 tests against this exact revision. Validation: core 1,142 passed (173 database tests ignored by the ordinary unit run); mail 22; portal 22; explicit PostgreSQL policy/concurrency 2, email continuation/address-binding 2, passwordless signup 1, root-path compatibility 2 and legacy registration 6. Frontend TypeScript build and changed-file formatting passed. Independent review findings were fixed before publication.
 
 Migration is opt-in: drain login traffic, establish replacement access, explicitly remove obsolete password hashes/password-update actions, enable the policy, then restart/resume. Existing master access is unchanged. Old email links without delivery-address snapshots require resend; no migration invents verified contact or deletes passwords. See `docs/human-login-browser-contract.md` on the patched branch.
 
