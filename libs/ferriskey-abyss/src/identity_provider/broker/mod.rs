@@ -9,5 +9,5 @@ pub use ports::{
 pub use value_objects::{
     BrokerCallbackInput, BrokerCallbackOutput, BrokerLoginInput, BrokerLoginOutput,
     BrokeredUserInfo, CreateBrokerAuthSessionRequest, CreateIdentityProviderLinkRequest,
-    OAuthProviderConfig, OAuthTokenResponse,
+    OAuthProviderConfig, OAuthTokenResponse, ProviderLinkIntent,
 };

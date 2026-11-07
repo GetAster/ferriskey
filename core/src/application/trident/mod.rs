@@ -146,6 +146,16 @@ impl TridentService for ApplicationService {
         self.trident_service.passkey_authenticate(input).await
     }
 
+    async fn decline_provider_link(
+        &self,
+        realm_name: String,
+        session_code: uuid::Uuid,
+    ) -> Result<(), CoreError> {
+        self.trident_service
+            .decline_provider_link(realm_name, session_code)
+            .await
+    }
+
     async fn generate_magic_link(&self, input: MagicLinkInput) -> Result<(), CoreError> {
         self.trident_service.generate_magic_link(input).await
     }

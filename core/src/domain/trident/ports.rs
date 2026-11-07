@@ -193,6 +193,8 @@ pub struct BurnRecoveryCodeOutput {
 }
 
 pub struct MagicLinkInput {
+    /// Internal, verified provider identity; HTTP send-magic-link never accepts it.
+    pub provider_link: Option<crate::domain::abyss::identity_provider::broker::ProviderLinkIntent>,
     pub realm_name: String,
     pub email: String,
     pub base_url: String,
@@ -410,6 +412,12 @@ pub trait TridentService: Send + Sync {
         input: PasskeyAuthenticateInput,
     ) -> impl Future<Output = Result<PasskeyAuthenticateOutput, CoreError>> + Send;
 
+    fn decline_provider_link(
+        &self,
+        realm_name: String,
+        session_code: Uuid,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
     fn generate_magic_link(
         &self,
         input: MagicLinkInput,
@@ -446,6 +454,7 @@ pub trait MagicLinkRepository: Send + Sync {
         expires_at: DateTime<Utc>,
         auth_session_code: Option<Uuid>,
         email: String,
+        provider_link: Option<crate::domain::abyss::identity_provider::broker::ProviderLinkIntent>,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn get_by_token_id(
@@ -461,6 +470,12 @@ pub trait MagicLinkRepository: Send + Sync {
     /// Atomically consume a live link and verify only its original contact email.
     fn consume(&self, magic_token_id: Uuid)
     -> impl Future<Output = Result<bool, CoreError>> + Send;
+
+    fn decline_provider_link(
+        &self,
+        realm_id: Uuid,
+        session_code: Uuid,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn cleanup_expired(&self, realm_id: Uuid)
     -> impl Future<Output = Result<(), CoreError>> + Send;
