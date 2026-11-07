@@ -150,6 +150,7 @@ mod tests {
 
     fn session(realm_id: Uuid) -> UserSession {
         UserSession {
+            auth_evidence: None,
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             realm_id,

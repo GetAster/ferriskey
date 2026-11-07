@@ -74,6 +74,9 @@ impl From<crate::entity::user_sessions::Model> for UserSession {
             sso_token_hash: model.sso_token_hash,
             persistent: model.persistent,
             authenticated_at: model.authenticated_at.with_timezone(&Utc),
+            auth_evidence: model
+                .auth_evidence
+                .and_then(|v| serde_json::from_value(v).ok()),
         }
     }
 }
@@ -103,6 +106,12 @@ impl UserSessionRepository for PostgresUserSessionRepository {
             sso_token_hash: Set(session.sso_token_hash.clone()),
             persistent: Set(session.persistent),
             authenticated_at: Set(session.authenticated_at.fixed_offset()),
+            auth_evidence: Set(session
+                .auth_evidence
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|_| SessionError::CreateError)?),
         };
 
         model.insert(&self.db).await.map_err(|e| {
@@ -298,6 +307,17 @@ impl UserSessionRepository for PostgresUserSessionRepository {
             .col_expr(
                 crate::entity::user_sessions::Column::AuthenticatedAt,
                 Expr::value(session.authenticated_at.fixed_offset()),
+            )
+            .col_expr(
+                crate::entity::user_sessions::Column::AuthEvidence,
+                Expr::value(
+                    session
+                        .auth_evidence
+                        .as_ref()
+                        .map(serde_json::to_value)
+                        .transpose()
+                        .map_err(|_| SessionError::UpdateError)?,
+                ),
             )
             .col_expr(
                 crate::entity::user_sessions::Column::ExpiresAt,

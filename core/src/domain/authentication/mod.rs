@@ -16,3 +16,5 @@ pub mod token_exchange;
 pub mod value_objects;
 
 pub use scope::{OidcScope, SCOPE_EMAIL, SCOPE_OPENID, SCOPE_PROFILE, ScopeManager};
+
+pub use ferriskey_domain::authentication::evidence;

@@ -1,3 +1,4 @@
+use ferriskey_domain::authentication::evidence::{AuthenticationEvidence, AuthenticationProof};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
@@ -339,6 +340,7 @@ fn validate_session_binding(
 /// Open the SSO session a login completes into, or re-authenticate into the
 /// live session the browser still held when it was sent to the login page, so
 /// signing in again does not leave a second session behind.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn open_or_reauthenticate_session<S, E>(
     sessions: &S,
     events: &E,
@@ -347,6 +349,7 @@ pub(crate) async fn open_or_reauthenticate_session<S, E>(
     scope: &RealmScope,
     session_lifetime_seconds: i64,
     persistent: bool,
+    auth_evidence: Option<AuthenticationEvidence>,
 ) -> Result<(UserSession, String), CoreError>
 where
     S: UserSessionRepository,
@@ -361,6 +364,7 @@ where
             scope,
             session_lifetime_seconds,
             persistent,
+            auth_evidence.clone(),
         )
         .await?
     {
@@ -374,6 +378,7 @@ where
         scope.id(),
         session_lifetime_seconds,
         persistent,
+        auth_evidence,
     )
     .await
 }
@@ -381,6 +386,7 @@ where
 /// Record a fresh authentication in `candidate`: new secret, new
 /// `authenticated_at`, a lifetime restarted from now. `None` when the session
 /// is gone, revoked meanwhile, or belongs to another account.
+#[allow(clippy::too_many_arguments)]
 async fn reauthenticate_session<S, E>(
     sessions: &S,
     events: &E,
@@ -389,6 +395,7 @@ async fn reauthenticate_session<S, E>(
     scope: &RealmScope,
     session_lifetime_seconds: i64,
     persistent: bool,
+    auth_evidence: Option<AuthenticationEvidence>,
 ) -> Result<Option<(UserSession, String)>, CoreError>
 where
     S: UserSessionRepository,
@@ -413,7 +420,12 @@ where
     let now = Utc::now();
     let sso_token = generate_random_token();
     session.sso_token_hash = Some(sso_token_hash(&sso_token));
-    session.authenticated_at = now;
+    session.authenticated_at = auth_evidence
+        .as_ref()
+        .and_then(|e| e.authenticated_at)
+        .and_then(|at| DateTime::from_timestamp(at, 0))
+        .unwrap_or(now);
+    session.auth_evidence = auth_evidence;
     session.expires_at = now + session_duration;
     session.persistent = persistent;
 
@@ -585,6 +597,7 @@ pub(crate) async fn open_user_session<S, E>(
     realm_id: RealmId,
     session_lifetime_seconds: i64,
     persistent: bool,
+    auth_evidence: Option<AuthenticationEvidence>,
 ) -> Result<(UserSession, String), CoreError>
 where
     S: UserSessionRepository,
@@ -607,6 +620,11 @@ where
     let sso_token = generate_random_token();
     session.sso_token_hash = Some(sso_token_hash(&sso_token));
     session.persistent = persistent;
+    if let Some(at) = auth_evidence.as_ref().and_then(|e| e.authenticated_at) {
+        session.authenticated_at =
+            DateTime::from_timestamp(at, 0).ok_or(CoreError::InternalServerError)?;
+    }
+    session.auth_evidence = auth_evidence;
 
     sessions.create(&session).await.map_err(|e| {
         warn!(
@@ -1858,6 +1876,7 @@ where
             // Preview only — nothing is signed or persisted, so there is no session.
             session_id: None,
             auth_time: None,
+            auth_evidence: None,
             resource: None,
         };
 
@@ -2123,6 +2142,7 @@ where
         realm_id: RealmId,
         session_lifetime_seconds: i64,
         persistent: bool,
+        auth_evidence: Option<AuthenticationEvidence>,
     ) -> Result<(UserSession, String), CoreError> {
         open_user_session(
             self.user_session_repository.as_ref(),
@@ -2131,6 +2151,7 @@ where
             realm_id,
             session_lifetime_seconds,
             persistent,
+            auth_evidence,
         )
         .await
     }
@@ -2202,6 +2223,18 @@ where
         // Bind the token pair to the SSO session so introspection and refresh can
         // check it is still alive. Absent for flows that establish no session.
         claims.sid = input.session_id;
+        for protected in ["amr", "acr", "aster_auth", "auth_time"] {
+            claims.additional_claims.remove(protected);
+        }
+        // Userinfo reads this signed snapshot, never the mutable SSO session.
+        if input
+            .scope
+            .as_deref()
+            .is_some_and(|scope| scope.split_whitespace().any(|s| s == "openid"))
+            && let Some(evidence) = &input.auth_evidence
+        {
+            claims.additional_claims.extend(evidence.claims());
+        }
 
         let jwt = encode_token_with_key(&claims, claims.exp.unwrap_or(0), &key)
             .instrument(info_span!("auth.create_jwt.sign_access"))
@@ -2223,7 +2256,18 @@ where
                     input.nonce.clone(),
                     input.id_token_lifetime,
                 );
-                id_claims.auth_time = input.auth_time;
+                for protected in ["amr", "acr", "aster_auth", "auth_time"] {
+                    id_claims.additional_claims.remove(protected);
+                }
+                id_claims.auth_time = match &input.auth_evidence {
+                    Some(e) => e.authenticated_at,
+                    None => input.auth_time,
+                };
+                if let Some(evidence) = &input.auth_evidence {
+                    let mut facts = evidence.claims();
+                    facts.remove("auth_time");
+                    id_claims.additional_claims.extend(facts);
+                }
                 Some(
                     encode_token_with_key(&id_claims, id_claims.exp, &key)
                         .instrument(info_span!("auth.create_jwt.sign_id"))
@@ -2349,6 +2393,12 @@ where
                 async { tokio::try_join!(persist_access, persist_refresh) }
                     .instrument(info_span!("auth.create_jwt.persist"))
                     .await?;
+                if let Some(evidence) = input.auth_evidence.clone() {
+                    self.refresh_token_repository
+                        .set_authentication_evidence(plan.jti, evidence)
+                        .await
+                        .map_err(|_| CoreError::InternalServerError)?;
+                }
             }
         }
 
@@ -2395,6 +2445,7 @@ where
             nonce: None,
             session_id: None,
             auth_time: None,
+            auth_evidence: None,
             resource: None,
         };
 
@@ -2843,11 +2894,20 @@ where
         let user_session = match bound_session {
             Some(session) => session,
             None => {
-                self.create_user_session(user.id, params.realm.id(), lifetimes.refresh_token, false)
-                    .await?
-                    .0
+                self.create_user_session(
+                    user.id,
+                    params.realm.id(),
+                    lifetimes.refresh_token,
+                    false,
+                    auth_session.auth_evidence.clone(),
+                )
+                .await?
+                .0
             }
         };
+
+        self.enforce_authentication_requirements(auth_session, user.id)
+            .await?;
 
         let (jwt, refresh_token, id_token) = self
             .create_jwt(
@@ -2871,6 +2931,7 @@ where
                     nonce: auth_session.nonce.clone(),
                     session_id: Some(user_session.id),
                     auth_time: Some(user_session.authenticated_at.timestamp()),
+                    auth_evidence: auth_session.auth_evidence.clone(),
                     resource,
                 },
             )
@@ -3055,6 +3116,7 @@ where
                     // Machine-to-machine: no user is present, so no SSO session exists.
                     session_id: None,
                     auth_time: None,
+                    auth_evidence: None,
                     resource,
                 },
                 id_token,
@@ -3407,7 +3469,13 @@ where
         let lifetimes = TokenLifetimes::resolve(realm_settings, &client);
 
         let (user_session, _) = self
-            .create_user_session(user.id, params.realm.id(), lifetimes.refresh_token, false)
+            .create_user_session(
+                user.id,
+                params.realm.id(),
+                lifetimes.refresh_token,
+                false,
+                Some(AuthenticationEvidence::new(AuthenticationProof::Password)),
+            )
             .await?;
 
         let (jwt, refresh_token, id_token) = self
@@ -3432,6 +3500,7 @@ where
                     nonce: None,
                     session_id: Some(user_session.id),
                     auth_time: Some(user_session.authenticated_at.timestamp()),
+                    auth_evidence: user_session.auth_evidence.clone(),
                     resource,
                 },
             )
@@ -3642,7 +3711,11 @@ where
                     id_token_lifetime: lifetimes.id_token,
                     nonce: None,
                     session_id: consumed.session_id,
-                    auth_time: None,
+                    auth_time: consumed
+                        .auth_evidence
+                        .as_ref()
+                        .and_then(|e| e.authenticated_at),
+                    auth_evidence: consumed.auth_evidence.clone(),
                     resource,
                 },
                 plan,
@@ -3802,7 +3875,11 @@ where
                             id_token_lifetime: lifetimes.id_token,
                             nonce: None,
                             session_id: claims.sid,
-                            auth_time: None,
+                            auth_time: stored
+                                .auth_evidence
+                                .as_ref()
+                                .and_then(|e| e.authenticated_at),
+                            auth_evidence: stored.auth_evidence.clone(),
                             resource,
                         },
                         plan,
@@ -3886,7 +3963,13 @@ where
 
         // Kept on the authorization request: the session may only open after
         // an OTP challenge or a required action, several requests later.
+        let evidence = AuthenticationEvidence::new(AuthenticationProof::Password);
+        self.auth_session_repository
+            .record_authentication(auth_session.id, auth_result.user_id, evidence.clone())
+            .await?;
         let mut auth_session = auth_session;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(auth_result.user_id);
         if auth_session.remember_me != params.remember_me {
             self.auth_session_repository
                 .set_remember_me(params.session_code, params.remember_me)
@@ -4295,6 +4378,60 @@ where
             .await
     }
 
+    async fn enforce_authentication_requirements(
+        &self,
+        auth_session: &AuthSession,
+        user_id: Uuid,
+    ) -> Result<(), CoreError> {
+        let Some(requirements) = &auth_session.auth_requirements else {
+            return Ok(());
+        };
+        if auth_session.expires_at <= Utc::now()
+            || auth_session.user_id.is_some_and(|id| id != user_id)
+        {
+            return Err(CoreError::InvalidSession);
+        }
+        if requirements.satisfied(auth_session.auth_evidence.as_ref(), Utc::now().timestamp()) {
+            return Ok(());
+        }
+        if let Some(values) = &requirements.essential_acr {
+            let credentials = self
+                .credential_repository
+                .get_credentials_by_user_id(user_id)
+                .await
+                .map_err(|_| CoreError::GetUserCredentialsError)?;
+            let passkey_enabled = self
+                .realm_repository
+                .get_realm_settings(auth_session.realm_id)
+                .await?
+                .is_some_and(|settings| settings.passkey_enabled);
+            if !passkey_enabled
+                || !values.iter().any(|v| v == "phr")
+                || !credentials
+                    .iter()
+                    .any(|c| c.credential_type == CredentialType::WebAuthnPublicKeyCredential)
+            {
+                let mut redirect = url::Url::parse(&auth_session.redirect_uri)
+                    .map_err(|_| CoreError::InvalidRedirectUri)?;
+                {
+                    let mut query = redirect.query_pairs_mut();
+                    query.append_pair("error", "unmet_authentication_requirements");
+                    if let Some(state) = &auth_session.state {
+                        query.append_pair("state", state);
+                    }
+                    if let Some(issuer) = &auth_session.issuer {
+                        query.append_pair("iss", issuer);
+                    }
+                }
+                return Err(CoreError::UnmetAuthenticationRequirements {
+                    redirect_url: redirect.into(),
+                });
+            }
+            return Err(CoreError::PasskeyAuthenticationRequired);
+        }
+        Err(CoreError::ReauthenticationRequired)
+    }
+
     async fn finalize_authentication(
         &self,
         user_id: Uuid,
@@ -4304,6 +4441,8 @@ where
         scope: &RealmScope,
         client: &Client,
     ) -> Result<AuthenticateOutput, CoreError> {
+        self.enforce_authentication_requirements(&auth_session, user_id)
+            .await?;
         let authorization_code = generate_random_string();
 
         let (sso_session, sso_cookie) = match sso_session {
@@ -4324,6 +4463,7 @@ where
                     scope,
                     lifetimes.refresh_token,
                     persistent,
+                    auth_session.auth_evidence.clone(),
                 )
                 .await?;
                 (session, Some(cookie))
@@ -4487,6 +4627,40 @@ where
             && (Utc::now() - session.get().authenticated_at).num_seconds() > max_age
         {
             return Err(CoreError::ReauthenticationRequired);
+        }
+
+        let mut auth_session = auth_session;
+        auth_session.auth_evidence = session.get().auth_evidence.clone();
+        self.enforce_authentication_requirements(&auth_session, user.id)
+            .await?;
+        if auth_session
+            .auth_requirements
+            .as_ref()
+            .is_some_and(|r| r.preferred_acr.iter().any(|v| v == "phr"))
+            && !auth_session
+                .auth_evidence
+                .as_ref()
+                .is_some_and(AuthenticationEvidence::phishing_resistant)
+            && self
+                .realm_repository
+                .get_realm_settings(scope.id())
+                .await?
+                .is_some_and(|settings| settings.passkey_enabled)
+            && self
+                .credential_repository
+                .get_credentials_by_user_id(user.id)
+                .await
+                .map_err(|_| CoreError::GetUserCredentialsError)?
+                .iter()
+                .any(|c| c.credential_type == CredentialType::WebAuthnPublicKeyCredential)
+        {
+            return Err(CoreError::PasskeyAuthenticationRequired);
+        }
+        if let Some(evidence) = auth_session.auth_evidence.clone() {
+            self.auth_session_repository
+                .record_authentication(auth_session.id, user.id, evidence)
+                .await?;
+            auth_session.user_id = Some(user.id);
         }
 
         let client = self
@@ -4845,6 +5019,15 @@ where
     CO: ConsentDecisionRepository,
     CM: ClientMetadataResolver,
 {
+    async fn check_authentication_requirements(
+        &self,
+        auth_session: &AuthSession,
+        user_id: Uuid,
+    ) -> Result<(), CoreError> {
+        self.enforce_authentication_requirements(auth_session, user_id)
+            .await
+    }
+
     async fn admit(&self, input: AdmitLoginInput) -> Result<LoginAdmission, CoreError> {
         let client = self
             .client_repository
@@ -4898,6 +5081,9 @@ where
                 });
             }
         }
+
+        self.enforce_authentication_requirements(&input.auth_session, user.id)
+            .await?;
 
         // Re-check the contact invariant even after a local step. A profile
         // change must not turn a previously admitted proof into normal access.
@@ -5164,9 +5350,11 @@ where
             issuer: input.issuer,
             resource: input.resource,
         };
+        let mut new_session = AuthSession::new(params);
+        new_session.auth_requirements = input.auth_requirements;
         let session = self
             .auth_session_repository
-            .create(&AuthSession::new(params))
+            .create(&new_session)
             .await
             .map_err(|_| CoreError::SessionCreateError)?;
 
@@ -5667,7 +5855,12 @@ where
 
                 self.handle_user_credentials_authentication(params, auth_session)
                     .await
-                    .map_err(|_| CoreError::InvalidCredentials)
+                    .map_err(|error| match error {
+                        CoreError::PasskeyAuthenticationRequired
+                        | CoreError::ReauthenticationRequired
+                        | CoreError::UnmetAuthenticationRequirements { .. } => error,
+                        _ => CoreError::InvalidCredentials,
+                    })
             }
         }
     }
@@ -5929,6 +6122,15 @@ where
         }
 
         let mut response = UserInfoResponse {
+            authentication_claims: input
+                .claims
+                .additional_claims
+                .iter()
+                .filter(|(key, _)| {
+                    matches!(key.as_str(), "amr" | "acr" | "aster_auth" | "auth_time")
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             sub: user.id.to_string(),
             ..Default::default()
         };
@@ -6378,7 +6580,13 @@ where
         }
 
         let (user_session, _) = self
-            .create_user_session(user.id, realm_scope.id(), lifetimes.refresh_token, false)
+            .create_user_session(
+                user.id,
+                realm_scope.id(),
+                lifetimes.refresh_token,
+                false,
+                None,
+            )
             .await?;
 
         if let Some(client) = client {
@@ -6409,6 +6617,7 @@ where
                         nonce: None,
                         session_id: Some(user_session.id),
                         auth_time: Some(user_session.authenticated_at.timestamp()),
+                        auth_evidence: None,
                         resource: None,
                     },
                 )
@@ -6728,6 +6937,8 @@ mod tests {
         authenticated: bool,
     ) -> AuthSession {
         AuthSession {
+            auth_evidence: None,
+            auth_requirements: None,
             id: Uuid::new_v4(),
             realm_id: RealmId::from(Uuid::new_v4()),
             client_id: Uuid::new_v4(),
@@ -7630,6 +7841,7 @@ mod tests {
 
     fn user_session(expires_at: chrono::DateTime<Utc>) -> UserSession {
         UserSession {
+            auth_evidence: None,
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             realm_id: Uuid::new_v4(),
@@ -8290,6 +8502,7 @@ mod bound_session_tests {
 
     fn live_session(realm_id: Uuid) -> UserSession {
         UserSession {
+            auth_evidence: None,
             id: Uuid::new_v4(),
             user_id: Uuid::new_v4(),
             realm_id,
@@ -8437,6 +8650,7 @@ mod bound_session_tests {
             &scope(realm_id),
             3600,
             true,
+            None,
         )
         .await
         .expect("re-authentication succeeds");
@@ -8478,6 +8692,7 @@ mod bound_session_tests {
             &scope(realm_id),
             3600,
             false,
+            None,
         )
         .await
         .expect("a new session opens");
@@ -8512,6 +8727,7 @@ mod bound_session_tests {
             &scope(realm_id),
             3600,
             false,
+            None,
         )
         .await
         .expect("the login still completes into a new session");
@@ -8542,6 +8758,7 @@ mod bound_session_tests {
             RealmId::new(realm_id),
             3600,
             false,
+            None,
         )
         .await;
 

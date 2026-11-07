@@ -187,6 +187,10 @@ pub enum CoreError {
     /// demands (OIDC `max_age`).
     #[error("Re-authentication required")]
     ReauthenticationRequired,
+    #[error("A passkey authentication is required")]
+    PasskeyAuthenticationRequired,
+    #[error("The authentication requirements cannot be met")]
+    UnmetAuthenticationRequirements { redirect_url: String },
 
     #[error("Invalid session")]
     InvalidSession,
@@ -534,6 +538,10 @@ impl CoreError {
             CoreError::SessionNotFound => "session_not_found",
             CoreError::SessionExpired => "session_expired",
             CoreError::ReauthenticationRequired => "reauthentication_required",
+            CoreError::PasskeyAuthenticationRequired => "passkey_authentication_required",
+            CoreError::UnmetAuthenticationRequirements { .. } => {
+                "unmet_authentication_requirements"
+            }
             CoreError::InvalidSession => "invalid_session",
             CoreError::SessionCreateError => "session_create_error",
             CoreError::SessionDeleteError => "session_delete_error",

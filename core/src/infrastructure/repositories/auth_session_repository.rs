@@ -65,6 +65,16 @@ impl TryFrom<crate::entity::auth_sessions::Model> for AuthSession {
             code_challenge_method,
             user_session_id: model.user_session_id,
             remember_me: model.remember_me,
+            auth_evidence: model
+                .auth_evidence
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| AuthenticationError::InternalServerError)?,
+            auth_requirements: model
+                .auth_requirements
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|_| AuthenticationError::InternalServerError)?,
             reauth_session_id: model.reauth_session_id,
             consent_token_hash: model.consent_token_hash,
             prompt_consent: model.prompt_consent,
@@ -116,6 +126,18 @@ impl AuthSessionRepository for PostgresAuthSessionRepository {
             consent_token_hash: Set(session.consent_token_hash.clone()),
             prompt_consent: Set(session.prompt_consent),
             remember_me: Set(session.remember_me),
+            auth_evidence: Set(session
+                .auth_evidence
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|_| AuthenticationError::InternalServerError)?),
+            auth_requirements: Set(session
+                .auth_requirements
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()
+                .map_err(|_| AuthenticationError::InternalServerError)?),
             reauth_session_id: Set(session.reauth_session_id),
             issuer: Set(session.issuer.clone()),
             resource: Set(session.resource.clone()),
@@ -205,6 +227,41 @@ impl AuthSessionRepository for PostgresAuthSessionRepository {
             return Err(AuthenticationError::NotFound);
         }
 
+        Ok(())
+    }
+
+    async fn record_authentication(
+        &self,
+        session_code: Uuid,
+        user_id: Uuid,
+        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
+    ) -> Result<(), AuthenticationError> {
+        let evidence =
+            serde_json::to_value(evidence).map_err(|_| AuthenticationError::InternalServerError)?;
+        let result = crate::entity::auth_sessions::Entity::update_many()
+            .col_expr(
+                crate::entity::auth_sessions::Column::AuthEvidence,
+                Expr::value(evidence),
+            )
+            .col_expr(
+                crate::entity::auth_sessions::Column::UserId,
+                Expr::value(user_id),
+            )
+            .filter(crate::entity::auth_sessions::Column::Id.eq(session_code))
+            .filter(
+                sea_orm::Condition::any()
+                    .add(crate::entity::auth_sessions::Column::UserId.is_null())
+                    .add(crate::entity::auth_sessions::Column::UserId.eq(user_id)),
+            )
+            .filter(crate::entity::auth_sessions::Column::ExpiresAt.gt(Utc::now().naive_utc()))
+            .filter(crate::entity::auth_sessions::Column::Code.is_null())
+            .filter(crate::entity::auth_sessions::Column::Authenticated.eq(false))
+            .exec(&self.db)
+            .await
+            .map_err(|_| AuthenticationError::InternalServerError)?;
+        if result.rows_affected != 1 {
+            return Err(AuthenticationError::NotFound);
+        }
         Ok(())
     }
 
@@ -953,5 +1010,63 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn authentication_evidence_is_bound_to_user_and_unissued_transaction() {
+        use ferriskey_domain::authentication::evidence::{
+            AuthenticationEvidence, AuthenticationProof,
+        };
+        let (repo, realm_id, client_id) = setup().await;
+        let user = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        for id in [user, other] {
+            repo.db.execute_unprepared(&format!("INSERT INTO users (id, realm_id, username, email_verified, enabled, created_at, updated_at) VALUES ('{id}', '{realm_id}', 'user-{id}', TRUE, TRUE, NOW(), NOW())")).await.unwrap();
+        }
+        let mut session = make_session(realm_id, client_id, false);
+        session.auth_requirements = Some(
+            ferriskey_domain::authentication::evidence::AuthenticationRequirements::parse(
+                Some(r#"{"id_token":{"acr":{"essential":true,"values":["phr"]}}}"#),
+                None,
+                Some(300),
+                Utc::now().timestamp(),
+            )
+            .unwrap(),
+        );
+        repo.create(&session).await.unwrap();
+        let evidence = AuthenticationEvidence::new(AuthenticationProof::EmailLink);
+        repo.record_authentication(session.id, user, evidence.clone())
+            .await
+            .unwrap();
+        let stored = repo
+            .get_by_session_code(session.id)
+            .await
+            .unwrap()
+            .across_realms();
+        assert_eq!(stored.auth_evidence, Some(evidence.clone()));
+        assert_eq!(stored.auth_requirements, session.auth_requirements);
+        assert!(
+            repo.record_authentication(session.id, other, evidence.clone())
+                .await
+                .is_err()
+        );
+        repo.update_code(session.id, "immutable-proof-code".into())
+            .await
+            .unwrap();
+        assert!(
+            repo.record_authentication(
+                session.id,
+                user,
+                AuthenticationEvidence::new(AuthenticationProof::Password)
+            )
+            .await
+            .is_err()
+        );
+        let stored = repo
+            .get_by_session_code(session.id)
+            .await
+            .unwrap()
+            .across_realms();
+        assert_eq!(stored.auth_evidence, Some(evidence));
     }
 }

@@ -59,6 +59,12 @@ pub trait JwtService: Send + Sync {
 
 #[cfg_attr(any(test, feature = "mock"), mockall::automock)]
 pub trait RefreshTokenRepository: Send + Sync {
+    fn set_authentication_evidence(
+        &self,
+        jti: Uuid,
+        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
+    ) -> impl Future<Output = Result<(), SecurityError>> + Send;
+
     #[allow(clippy::too_many_arguments)]
     fn create(
         &self,

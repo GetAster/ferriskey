@@ -1,4 +1,7 @@
 use ferriskey_domain::common::email_limits::{EmailSendLimits, recipient_hash_hex};
+use base64::Engine as _;
+use ferriskey_domain::authentication::evidence::{AuthenticationEvidence, AuthenticationProof};
+use sha2::Digest as _;
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -752,6 +755,7 @@ where
                 auth_session.client_id,
                 auth_session.remember_me,
                 auth_session.reauth_session_id,
+                auth_session.auth_evidence.clone(),
             )
             .await?;
 
@@ -1520,7 +1524,24 @@ where
 
         let webauthn = build_webauthn_client(input.rp_info)?;
 
-        let auth_result = match auth_session.webauthn_challenge {
+        let now = Utc::now();
+        if auth_session.authenticated
+            || auth_session.code.is_some()
+            || auth_session.expires_at <= now
+        {
+            return Err(CoreError::InvalidSession);
+        }
+        let issued_at = auth_session
+            .webauthn_challenge_issued_at
+            .ok_or(CoreError::WebAuthnMissingChallenge)?;
+        if issued_at > now || now - issued_at > Duration::minutes(WEBAUTHN_CHALLENGE_TTL_MINUTES) {
+            return Err(CoreError::WebAuthnChallengeFailed);
+        }
+        let challenge = self
+            .auth_session_repository
+            .take_webauthn_challenge(auth_session.id)
+            .await?;
+        let auth_result = match challenge {
             Some(WebAuthnChallenge::Authentication(ref pa)) => webauthn
                 .finish_passkey_authentication(&input.credential, pa)
                 .map_err(|e| {
@@ -1544,6 +1565,19 @@ where
         if !auth_result.user_verified() {
             return Err(CoreError::WebAuthnChallengeFailed);
         }
+
+        let evidence = AuthenticationEvidence::new(AuthenticationProof::Passkey {
+            credential: base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(auth_result.cred_id().as_slice())),
+            aaguid: None,
+            uv: auth_result.user_verified(),
+        });
+        self.auth_session_repository
+            .record_authentication(auth_session.id, user.get().id, evidence.clone())
+            .await?;
+        let mut auth_session = auth_session;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(user.get().id);
 
         let (login_url, sso_session) = self
             .store_auth_code_and_generate_login_url(
@@ -1667,7 +1701,7 @@ where
 
         let scope = RealmScope::resolve(self.realm_repository.as_ref(), &input.realm_name).await?;
 
-        let mut auth_session = auth_session
+        let auth_session = auth_session
             .in_realm(&scope)
             .map_err(|_| CoreError::SessionNotFound)?
             .into_inner();
@@ -1793,6 +1827,19 @@ where
         if !auth_result.user_verified() {
             return Err(CoreError::WebAuthnInvalidAssertion);
         }
+
+        let evidence = AuthenticationEvidence::new(AuthenticationProof::Passkey {
+            credential: base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(auth_result.cred_id().as_slice())),
+            aaguid: None,
+            uv: auth_result.user_verified(),
+        });
+        self.auth_session_repository
+            .record_authentication(auth_session.id, user.get().id, evidence.clone())
+            .await?;
+        let mut auth_session = auth_session;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(user.get().id);
 
         self.record_remember_me(&mut auth_session, input.remember_me)
             .await?;
@@ -1923,6 +1970,19 @@ where
             FlowStepName::MfaChallenge,
             StepOutcome::success(),
         );
+
+        let mut evidence = auth_session
+            .auth_evidence
+            .clone()
+            .unwrap_or_else(|| AuthenticationEvidence::new(AuthenticationProof::Otp));
+        evidence.otp_verified = true;
+        // An OTP must never refresh the age of an earlier passkey proof.
+        self.auth_session_repository
+            .record_authentication(auth_session.id, user.id, evidence.clone())
+            .await?;
+        let mut auth_session = auth_session;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(user.id);
 
         if user.needs_lockout_reset() {
             self.user_repository
@@ -2649,6 +2709,14 @@ where
         {
             return Err(CoreError::InvalidMagicLink);
         }
+        let evidence = AuthenticationEvidence::new(AuthenticationProof::EmailLink);
+        self.auth_session_repository
+            .record_authentication(auth_session.id, magic_link.user_id, evidence.clone())
+            .await?;
+        let mut auth_session = auth_session;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(magic_link.user_id);
+
         match self
             .user_required_action_repository
             .remove_required_action(magic_link.user_id, RequiredAction::VerifyEmail)
@@ -2657,6 +2725,12 @@ where
             Ok(()) | Err(RequiredActionError::NotFound) => {}
             Err(_) => return Err(CoreError::InternalServerError),
         }
+        if auth_session.auth_requirements.is_some() {
+            self.admission
+                .check_authentication_requirements(&auth_session, magic_link.user_id)
+                .await?;
+        }
+
         let pending = self
             .pending_auth_step_for(magic_link.user_id, &scope, &[RequiredAction::VerifyEmail])
             .await?;
@@ -3208,7 +3282,7 @@ mod tests {
         },
         webhook::ports::MockWebhookRepository,
     };
-    use base64::prelude::{BASE64_URL_SAFE_NO_PAD, Engine as _};
+    use base64::prelude::BASE64_URL_SAFE_NO_PAD;
     use chrono::DateTime;
     use ferriskey_domain::elevation::ports::MockElevationRepository;
     use ferriskey_domain::realm::{Realm, RealmSetting};
@@ -3275,6 +3349,7 @@ mod tests {
     type CapturedEnrollment = Arc<Mutex<Option<(Uuid, String, DateTime<Utc>)>>>;
 
     struct TridentTestBuilder {
+        recorded_evidence: Arc<Mutex<Vec<AuthenticationEvidence>>>,
         credential_repo: Arc<MockCredentialRepository>,
         recovery_code_repo: Arc<MockRecoveryCodeRepository>,
         auth_session_repo: Arc<MockAuthSessionRepository>,
@@ -3309,10 +3384,20 @@ mod tests {
 
     impl TridentTestBuilder {
         fn new() -> Self {
+            let recorded_evidence = Arc::new(Mutex::new(Vec::new()));
+            let sink = recorded_evidence.clone();
+            let mut sessions = MockAuthSessionRepository::new();
+            sessions
+                .expect_record_authentication()
+                .returning(move |_, _, evidence| {
+                    sink.lock().unwrap().push(evidence);
+                    Box::pin(async { Ok(()) })
+                });
             Self {
+                recorded_evidence,
                 credential_repo: Arc::new(MockCredentialRepository::new()),
                 recovery_code_repo: Arc::new(MockRecoveryCodeRepository::new()),
-                auth_session_repo: Arc::new(MockAuthSessionRepository::new()),
+                auth_session_repo: Arc::new(sessions),
                 hasher_repo: Arc::new(MockHasherRepository::new()),
                 user_required_action_repo: Arc::new(MockUserRequiredActionRepository::new()),
                 magic_link_repo: Arc::new(MockMagicLinkRepository::new()),
@@ -5327,6 +5412,8 @@ mod tests {
         issued_at: Option<DateTime<Utc>>,
     ) -> AuthSession {
         AuthSession {
+            auth_evidence: None,
+            auth_requirements: None,
             id: session_code,
             realm_id: realm.id,
             client_id: Uuid::new_v4(),
@@ -5572,9 +5659,9 @@ mod tests {
         Arc::get_mut(&mut builder.sso_session)
             .unwrap()
             .expect_open_for_login()
-            .withf(move |_, _, client, _, _| *client == client_id)
+            .withf(move |_, _, client, _, _, _| *client == client_id)
             .times(1)
-            .returning(move |_, _, _, _, _| {
+            .returning(move |_, _, _, _, _, _| {
                 Box::pin(async move {
                     Ok(OpenedSsoSession {
                         session_id: sso_session_id,
@@ -6104,7 +6191,7 @@ mod tests {
             .unwrap()
             .expect_open_for_login()
             .times(1)
-            .returning(|_, _, _, _, _| Box::pin(async { Err(CoreError::SessionCreateError) }));
+            .returning(|_, _, _, _, _, _| Box::pin(async { Err(CoreError::SessionCreateError) }));
         Arc::get_mut(&mut builder.auth_session_repo)
             .unwrap()
             .expect_complete_login()
@@ -6413,6 +6500,8 @@ mod tests {
 
         let session_code = Uuid::new_v4();
         let session = AuthSession {
+            auth_evidence: None,
+            auth_requirements: None,
             webauthn_challenge: Some(match identified_user {
                 Some(user_id) => WebAuthnChallenge::AuthenticationForUser {
                     user_id,
@@ -6673,6 +6762,7 @@ mod tests {
             expect_no_authorization_code(&mut builder);
         }
 
+        let recorded = builder.recorded_evidence.clone();
         let service = builder.build();
         let input = || PasskeyAuthenticateInput {
             webapp_base_url: TEST_WEBAPP_URL.to_string(),
@@ -6683,6 +6773,14 @@ mod tests {
             remember_me: false,
         };
         let result = service.passkey_authenticate(input()).await;
+        if result.is_ok() {
+            let proofs = recorded.lock().unwrap();
+            assert_eq!(proofs.len(), 1);
+            let expected_hash = BASE64_URL_SAFE_NO_PAD.encode(Sha256::digest(&credential_id));
+            assert!(
+                matches!(&proofs[0].method, AuthenticationProof::Passkey { credential, uv: true, .. } if credential == &expected_hash)
+            );
+        }
         if code_expected {
             assert!(
                 matches!(

@@ -16,6 +16,7 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
     pub id: Uuid,
+    pub auth_evidence: Option<Json>,
     pub jti: Uuid,
     pub user_id: Uuid,
     pub revoked: bool,
@@ -41,6 +42,7 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
+    AuthEvidence,
     Id,
     Jti,
     UserId,
@@ -81,6 +83,7 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
+            Self::AuthEvidence => ColumnType::JsonBinary.def().null(),
             Self::Id => ColumnType::Uuid.def(),
             Self::Jti => ColumnType::Uuid.def().unique(),
             Self::UserId => ColumnType::Uuid.def(),

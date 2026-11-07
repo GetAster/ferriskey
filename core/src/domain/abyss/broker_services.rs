@@ -1,3 +1,4 @@
+use ferriskey_domain::authentication::evidence::{AuthenticationEvidence, AuthenticationProof};
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -474,6 +475,23 @@ fn verify_id_token_against_jwks(
     Ok(claims)
 }
 
+fn verified_provider_user_info(
+    mut claims: serde_json::Value,
+    config: &OAuthProviderConfig,
+) -> Result<BrokeredUserInfo, CoreError> {
+    if config.apple.is_some() {
+        // Interpret Apple string booleans only after token verification.
+        if let Some(value) = claims["email_verified"].as_str() {
+            claims["email_verified"] = match value {
+                "true" => serde_json::Value::Bool(true),
+                "false" => serde_json::Value::Bool(false),
+                _ => return Err(CoreError::InvalidIdToken),
+            };
+        }
+    }
+    user_info_for_provider(claims, config.issuer.as_deref())
+}
+
 fn pending_connection_session(
     mut original: AuthSession,
     user_id: Uuid,
@@ -493,6 +511,7 @@ fn pending_connection_session(
     original.code = None;
     original.authenticated = false;
     original.user_session_id = None;
+    original.auth_evidence = None;
     original.consent_token_hash = None;
     original.webauthn_challenge = None;
     original.webauthn_challenge_issued_at = None;
@@ -609,6 +628,12 @@ enum CodeTarget {
 #[derive(Debug, PartialEq, Eq)]
 enum CodeIssue {
     Issued,
+    PasskeyRequired {
+        browser_session_id: Uuid,
+    },
+    ReauthenticationRequired {
+        browser_session_id: Uuid,
+    },
     ActionsRequired {
         required_actions: Vec<RequiredAction>,
         second_factor_pending: bool,
@@ -630,6 +655,7 @@ async fn issue_login_code<ASR, ADM>(
     webapp_base_url: &str,
     authorization_code: &str,
     compass_flow_id: Option<Uuid>,
+    auth_evidence: Option<AuthenticationEvidence>,
 ) -> Result<CodeIssue, CoreError>
 where
     ASR: AuthSessionRepository,
@@ -654,6 +680,14 @@ where
         }
     };
 
+    let mut auth_session = auth_session;
+    if let Some(evidence) = auth_evidence {
+        sessions
+            .record_authentication(auth_session.id, user_id, evidence.clone())
+            .await?;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(user_id);
+    }
     let auth_session_id = auth_session.id;
     let admitted = admission
         .admit(AdmitLoginInput {
@@ -663,7 +697,21 @@ where
             scope: scope.clone(),
             webapp_base_url: webapp_base_url.to_string(),
         })
-        .await?;
+        .await;
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(CoreError::PasskeyAuthenticationRequired) => {
+            return Ok(CodeIssue::PasskeyRequired {
+                browser_session_id: auth_session_id,
+            });
+        }
+        Err(CoreError::ReauthenticationRequired) => {
+            return Ok(CodeIssue::ReauthenticationRequired {
+                browser_session_id: auth_session_id,
+            });
+        }
+        Err(error) => return Err(error),
+    };
 
     if let LoginAdmission::ActionsRequired {
         required_actions,
@@ -1016,17 +1064,50 @@ where
         };
 
         // 7. Extract user info from tokens
-        let mut user_info = self
-            .extract_user_info(
-                &oauth_config,
-                &token_response,
-                if oauth_config.apple.is_some() {
-                    Some(session.broker_state.as_str())
-                } else {
-                    session.nonce.as_deref()
-                },
+        let expected_nonce = if oauth_config.apple.is_some() {
+            Some(session.broker_state.as_str())
+        } else {
+            session.nonce.as_deref()
+        };
+        let (mut user_info, upstream_iss, upstream_sub, authenticated_at) = if let Some(id_token) =
+            token_response
+                .id_token
+                .as_ref()
+                .filter(|_| oauth_config.jwks_url.is_some() && oauth_config.issuer.is_some())
+        {
+            let verified = self
+                .verify_id_token(id_token, &oauth_config, expected_nonce)
+                .await?;
+            let issuer = verified["iss"].as_str().map(str::to_owned);
+            let subject = verified["sub"].as_str().map(str::to_owned);
+            let authenticated_at = verified
+                .get("auth_time")
+                .and_then(|v| v.as_i64())
+                .filter(|time| *time >= 0 && *time <= Utc::now().timestamp());
+            (
+                verified_provider_user_info(verified, &oauth_config)?,
+                issuer,
+                subject,
+                authenticated_at,
             )
-            .await?;
+        } else {
+            (
+                self.extract_user_info(&oauth_config, &token_response, expected_nonce)
+                    .await?,
+                None,
+                None,
+                None,
+            )
+        };
+        let evidence = AuthenticationEvidence {
+            method: AuthenticationProof::Federated {
+                provider: idp.get().alias.clone(),
+                upstream_iss,
+                upstream_sub,
+            },
+            authenticated_at,
+            otp_verified: false,
+        };
 
         if oauth_config.apple.is_some() {
             apply_apple_profile(&mut user_info, input.user.as_deref())?;
@@ -1164,6 +1245,7 @@ where
             &input.webapp_base_url,
             &authorization_code,
             flow_id.as_ref().map(|id| id.0),
+            Some(evidence),
         )
         .await?;
 
@@ -1171,6 +1253,40 @@ where
         self.broker_session_repository
             .delete(&broker_session)
             .await?;
+
+        if let CodeIssue::ReauthenticationRequired { browser_session_id } = &issue {
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/login?reauthentication_required=true",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user,
+                client_id: client.client_id,
+                browser_session_id: Some(*browser_session_id),
+                required_actions: Vec::new(),
+                second_factor_pending: false,
+            });
+        }
+
+        if let CodeIssue::PasskeyRequired { browser_session_id } = &issue {
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/login?passkey_required=true",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user,
+                client_id: client.client_id,
+                browser_session_id: Some(*browser_session_id),
+                required_actions: Vec::new(),
+                second_factor_pending: false,
+            });
+        }
 
         if let CodeIssue::ActionsRequired {
             required_actions,
@@ -1257,21 +1373,10 @@ where
             && config.jwks_url.is_some()
             && config.issuer.is_some()
         {
-            let mut claims = self
+            let claims = self
                 .verify_id_token(id_token, config, expected_nonce)
                 .await?;
-
-            if config.apple.is_some() {
-                // Interpret Apple string booleans only after token verification.
-                if let Some(value) = claims["email_verified"].as_str() {
-                    claims["email_verified"] = match value {
-                        "true" => serde_json::Value::Bool(true),
-                        "false" => serde_json::Value::Bool(false),
-                        _ => return Err(CoreError::InvalidIdToken),
-                    };
-                }
-            }
-            return user_info_for_provider(claims, config.issuer.as_deref());
+            return verified_provider_user_info(claims, config);
         }
 
         // Tenant-independent identity requires a verified tenant and subject.
@@ -2177,6 +2282,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("consent is not an error");
@@ -2231,6 +2337,7 @@ mod tests {
             CodeTarget::Existing(session_id),
             "https://app.example",
             "must-not-issue",
+            None,
             None,
         )
         .await
@@ -2289,6 +2396,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("an admitted login gets its code");
@@ -2323,6 +2431,7 @@ mod tests {
             CodeTarget::New(Box::new(session)),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await
@@ -2371,6 +2480,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("an admitted login gets its code");
@@ -2404,6 +2514,7 @@ mod tests {
             CodeTarget::New(Box::new(session)),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await;
@@ -2643,6 +2754,7 @@ mod tests {
             CodeTarget::Existing(session_id),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await;

@@ -248,6 +248,10 @@ impl Default for MapperEngine {
 }
 
 const RESERVED_CLAIMS: &[&str] = &[
+    "amr",
+    "acr",
+    "auth_time",
+    "aster_auth",
     "sub",
     "iat",
     "jti",
@@ -521,12 +525,20 @@ mod tests {
             groups: vec![],
         };
 
-        // Empty mappers should produce empty output
-        let result = engine
-            .apply_mappers(&[], &context, TokenType::AccessToken)
-            .unwrap();
-        assert!(result.claims.is_empty());
-        assert!(result.additional_audiences.is_empty());
+        for token_type in [TokenType::AccessToken, TokenType::IdToken] {
+            let mappers = ["amr", "acr", "auth_time", "aster_auth", "aster_auth.method"].into_iter().map(|name| ferriskey_aegis::entities::ProtocolMapper {
+                id: Uuid::new_v4(), client_scope_id: Uuid::new_v4(), name: name.into(), mapper_type: "oidc-hardcoded-claim-mapper".into(),
+                config: json!({"claim.name":name,"claim.value":"phr","jsonType.label":"String","access.token.claim":"true","id.token.claim":"true"}), created_at: chrono::Utc::now(),
+            }).collect::<Vec<_>>();
+            let result = engine
+                .apply_mappers(&mappers, &context, token_type)
+                .unwrap();
+            assert!(
+                result.claims.is_empty(),
+                "mappers must not fabricate proof: {:?}",
+                result.claims
+            );
+        }
     }
 
     #[test]
