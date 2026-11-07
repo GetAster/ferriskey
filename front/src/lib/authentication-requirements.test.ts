@@ -35,3 +35,8 @@ test('malformed and executable error redirects are refused', () => {
   for (const error of [null, undefined, 'failure', new Error('failure')])
     assert.equal(redirect(error, path), undefined)
 })
+
+test('fresh authentication stays on the saved transaction', () => {
+  assert.equal(redirect({ reason: 'reauthentication_required' }, path),
+    '/realms/my%20realm/authentication/login?reauthentication_required=true')
+})
