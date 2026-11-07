@@ -1,7 +1,5 @@
 import { CheckCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import '../ui/page-login.css'
 import { AUTH_NAMESPACE } from '../constants'
@@ -15,7 +13,6 @@ import { AUTH_NAMESPACE } from '../constants'
  * component.
  */
 export default function PageEmailVerifiedFeature() {
-  const { realm_name } = useParams()
   const { t } = useTranslation(AUTH_NAMESPACE)
 
   return (
@@ -34,14 +31,9 @@ export default function PageEmailVerifiedFeature() {
                       {t('email_verified.title')}
                     </h1>
                     <p className='text-sm text-muted-foreground'>
-                      {t('email_verified.description')}
+                      {t('email_verified.return_to_sign_in')}
                     </p>
                   </div>
-                  <Button asChild className='w-full rounded-lg py-5 text-sm'>
-                    <Link to={`/realms/${realm_name}/authentication/login`}>
-                      {t('email_verified.action')}
-                    </Link>
-                  </Button>
                 </div>
               </div>
             </CardContent>

@@ -1,6 +1,5 @@
 import { useDevicePreview, useDeviceVerify } from '@/api/device.api'
 import { Form } from '@/components/ui/form'
-import { useAuth } from '@/hooks/use-auth'
 import { navigateToLogin } from '@/lib/login-navigation'
 import { apiErrorMessage } from '@/lib/api-error'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -42,7 +41,6 @@ export default function PageDeviceVerifyFeature() {
   const { t } = useTranslation(AUTH_NAMESPACE)
   const realm = realm_name ?? 'master'
   const location = useLocation()
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth()
 
   const prefill = useMemo(() => {
     const params = new URLSearchParams(location.search)
@@ -73,7 +71,7 @@ export default function PageDeviceVerifyFeature() {
   const { data: preview } = useDevicePreview({
     realm,
     userCode: normalisedCode,
-    enabled: isAuthenticated && normalisedCode.length > 0 && status === 'idle',
+    enabled: normalisedCode.length > 0 && status === 'idle',
   })
 
   const onSubmit = async (values: DeviceVerifySchema, action: DeviceAction) => {
@@ -133,16 +131,6 @@ export default function PageDeviceVerifyFeature() {
     setPendingAction(null)
     form.reset({ user_code: '' })
   }
-
-  // Block render while auth state is hydrating to avoid a flash of the form
-  // before we know whether to redirect to login.
-  if (isAuthLoading) return null
-
-  // Not authenticated yet — we still let the user *see* the form and type a
-  // code; we'll bounce to login only when they actually submit (mirrors how
-  // Google's device.google.com works). This keeps deep-links to
-  // `?user_code=...` discoverable to logged-out users.
-  void isAuthenticated
 
   return (
     <Form {...form}>

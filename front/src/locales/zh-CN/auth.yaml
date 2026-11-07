@@ -173,6 +173,11 @@ passkey:
   start_failed: 无法启动通行密钥认证
 
 verify_email:
+  continue: 我已验证电子邮箱
+  retry_continue: 重试
+  continue_failed: 无法继续登录。请重试。
+  sign_in_expired: 此次登录已失效。请返回应用并重新登录。
+  not_verified: 电子邮箱尚未验证。请打开验证链接后重试。
   title: 验证您的邮箱
   description: 验证链接已发送到您的邮箱地址。请查看您的收件箱，并点击链接以验证您的账户。
   spam_hint: 如果没有看到这封邮件，请检查垃圾邮件文件夹。
@@ -205,6 +210,7 @@ check_email:
   hint: 点击邮件中的链接以验证您的账户。该链接很快就会失效。
 
 email_verified:
+  return_to_sign_in: 请返回原来的登录页面继续。如果该页面已关闭，请从您之前使用的应用重新登录。
   title: 邮箱已验证
   description: 您的邮箱地址已确认。您现在可以登录您的账户了。
   action: 继续登录
