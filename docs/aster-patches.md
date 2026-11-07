@@ -144,3 +144,19 @@ verification/continue browser path and AgentMail inbox delivery remain unverifie
 ## Deferred production follow-up: provider-secret encryption
 
 Owner approved planning this for production, not enabling it in the current dev release. Reuse the existing `SecretCipher`, configured key ring and startup backfill. Seal `identity_providers.config.client_secret` at the repository boundary with a distinct purpose and provider-row ID as associated data; decrypt only for trusted service use and retain masked API output. Extend the existing batched backfill to update that JSON member with compare-and-swap, preserving other configuration and avoiding concurrent secret-rotation overwrites. Test plaintext migration, old-key reads/new-key resealing, wrong-row rejection, missing-key failure, masked responses and concurrent updates. No new crypto scheme, key-management service or HTTP endpoint is needed. Apple signing keys remain mounted files and its short-lived client assertions are not persisted.
+
+## Development deployment and live checks for release 10
+
+The deployment agent reported `aster-ferriskey-v0.10.2-10` live on
+`auth.getaster.now` with aster-idp commit `7284907`. Live checks confirmed:
+
+- Microsoft authorization reaches the `/common` endpoint with the configured client, redirect and S256 PKCE. Real Microsoft sign-in remains an owner check.
+- Apple configuration reads back with the Services ID, mounted signing-key path, no static secret and `trust_email=false`. Authorization reaches Apple with form POST, name/email scopes and nonce. Real Apple sign-in remains an owner check; the host screen does not yet show an Apple tile.
+- Two magic-link requests for the same address three seconds apart produce one email and identical responses.
+- A passkey ID token carries `amr=[pop,user,mfa]`, `acr=phr` and the expected `aster_auth` proof.
+- An email-link SSO session requesting essential `acr=phr` reaches passkey step-up and completes with `acr=phr`.
+- The connection-confirmation screen routes and renders; the full email-confirmation linking journey remains unverified.
+
+These are deployment-agent observations, distinct from the automated regression
+coverage above. Host totals are 162 passed, zero failed, two ignored for releases
+8 and 9, and 163 passed, zero failed, two ignored for release 10.
