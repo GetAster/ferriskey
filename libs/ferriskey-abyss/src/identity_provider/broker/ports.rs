@@ -15,6 +15,7 @@ use super::value_objects::{
 };
 
 /// Repository trait for BrokerAuthSession persistence
+#[cfg_attr(any(test, feature = "mock"), mockall::automock)]
 pub trait BrokerAuthSessionRepository: Send + Sync {
     /// Creates a new broker auth session
     fn create(
