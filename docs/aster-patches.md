@@ -17,14 +17,14 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-3` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `b6b51c55af2f5e37a5e457474427775e0c108c03`. This release adds opt-in passwordless realm policy and human browser login continuation (row 10). Before tagging, aster-idp's full suite passed 154 tests against this exact revision (2 real-binary smoke tests remained ignored). Image build and development deployment are in progress; deployment is not yet verified.
+`aster-ferriskey-v0.10.2-3` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `b6b51c55af2f5e37a5e457474427775e0c108c03`. This release adds opt-in passwordless realm policy and human browser login continuation (row 10). Before tagging, aster-idp's full suite passed 154 tests against this exact revision (2 real-binary smoke tests remained ignored). Deployed at `https://auth.getaster.now` inside aster-idp `a9e77e3`, image digest `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. The public API confirms passwordless mode on realm `aster` and off on `master`; the console was rebuilt from this tag.
 
 Previous release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. This release adds the embedded application builder, trusted issuance, atomic service-account provisioning and public host API exports. Before tagging, aster-idp `d737911` passed 151 tests and both explicit PostgreSQL smoke tests against this exact revision; default and no-default builds passed. The embedded host consumes the pinned Rust crate. The embedded revision was subsequently deployed inside aster-idp `54c8cf0` at the development instance on 2026-11-07. This is not a standalone FerrisKey API image release.
 
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-3` | `b6b51c55` | Image build/development deployment in progress; not yet verified. |
+| `aster-ferriskey-v0.10.2-3` | `b6b51c55` | aster-idp `a9e77e3`: `sha256:6279c7c66fa85b6688dc8fd9fc0507c809a0ccb9d2fe1c03c717c83cf594fd39`. |
 | `aster-ferriskey-v0.10.2-2` | `4e3781da` | Embedded in deployed aster-idp `54c8cf0`; see the aster-idp deployment record for its image digest. |
 | `aster-ferriskey-v0.10.2-1` | `2508c406` | Not published. Image IDs: api `sha256:66ea5e2ea364e8fe7ab03e61c06a4c64c94e7dded46eb66c726a51d61441e7c5`, webapp `sha256:25d43e942ccb8b6becfcfcc326da79f9aeb92fa4414c9176b13d0bcfe2521b89` |
 
@@ -54,3 +54,16 @@ Row 10 is published on the patched branch at `b6b51c55af2f5e37a5e457474427775e0c
 Migration is opt-in: drain login traffic, establish replacement access, explicitly remove obsolete password hashes/password-update actions, enable the policy, then restart/resume. Existing master access is unchanged. Old email links without delivery-address snapshots require resend; no migration invents verified contact or deletes passwords. See `docs/human-login-browser-contract.md` on the patched branch.
 
 Planned patches are not listed here until they land.
+
+## Development browser verification for release -3
+
+The deployment agent verified returning-user magic-link login, new-person signup
+with zero password credentials and verified contact, and SSO reuse in a real
+browser. Mail travelled through Stalwart to test mailboxes read over IMAP, and
+the authorization endpoint returned code, state and issuer to the relying party.
+AgentMail accepted SMTP delivery but did not surface the messages in its inbox;
+that provider path is not verified. Browser passkey enrollment/authentication and
+the email-verification continuation screen remain unverified by the available
+browser tools; their server paths have automated regression coverage. The new
+human screens still need an optional passkey-enrollment entry point; enrollment
+must not silently become mandatory for new users.
