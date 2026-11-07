@@ -1,107 +1,64 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { useAuthenticateMutation } from '@/api/auth.api'
-import { AuthenticationStatus } from '@/api/api.interface'
+import { useTranslation } from 'react-i18next'
+import { Button } from '@/components/ui/button'
 import { useVerifyEmail } from '@/hooks/use-verify-email'
+import { apiErrorMessage } from '@/lib/api-error'
 import { PortalLayoutWrapper } from '../components/portal-layout-wrapper'
 import PageVerifyEmail from './page-verify-email'
-import {
-  clearVerifyEmailContext,
-  getVerifyEmailContext,
-} from './execution/verify-email-context'
-import { PORTAL_PAGE_TYPE } from '../constants'
-import { followServerRedirect } from '@/lib/follow-server-redirect'
+import { AUTH_NAMESPACE, PORTAL_PAGE_TYPE } from '../constants'
+import { continueLogin } from '../utils/continue-login'
+import { requestLoginContinuation } from '../utils/request-login-continuation'
 
-/**
- * Orchestrates the email-verification flow for `/verify-email?token=…`:
- *
- *  1. Calls the verify endpoint via `useVerifyEmail` (state machine:
- *     loading / success / expired / error).
- *  2. On success, optionally chains an `authenticate()` call if the user
- *     still has a verify-email context (registration was on this same
- *     browser session) — that lets the backend resume the auth flow
- *     without bouncing through login.
- *  3. Once everything resolves, redirects to `/email-verified` (a
- *     customisable success page) so the user never sits indefinitely on
- *     the verification screen.
- *
- * Crucially, this orchestration lives *above* `<PortalLayoutWrapper>`.
- * Without that hoist, a custom verify-email tree built in the theme
- * builder would shadow `<PageVerifyEmail>` and the verify mutation
- * would never run — the user would be stuck on the page even after
- * the link had been clicked.
- */
+// Orchestration stays above the theme wrapper so a custom page cannot suppress it.
 export default function VerifyEmailRoute() {
   const { state, realm_name } = useVerifyEmail()
+  const { t } = useTranslation(AUTH_NAMESPACE)
   const navigate = useNavigate()
-  const {
-    mutate: authenticate,
-    data: authenticateData,
-  } = useAuthenticateMutation()
-  const hasTriedAuth = useRef(false)
-  const hasNavigatedToSuccess = useRef(false)
+  const hasTriedContinuation = useRef(false)
+  const inFlight = useRef(false)
+  const [continuationError, setContinuationError] = useState<string | null>(null)
+  const [isContinuing, setIsContinuing] = useState(false)
 
-  const goToSuccess = () => {
-    if (hasNavigatedToSuccess.current) return
-    hasNavigatedToSuccess.current = true
-    navigate(`/realms/${realm_name}/authentication/email-verified`, {
-      replace: true,
-    })
+  const resumeLogin = useCallback(async () => {
+    if (!realm_name || inFlight.current) return
+    inFlight.current = true
+    setIsContinuing(true)
+    setContinuationError(null)
+    try {
+      const result = await requestLoginContinuation(window.apiUrl, realm_name)
+      if (result.kind === 'unavailable') {
+        navigate(`/realms/${realm_name}/authentication/email-verified`, { replace: true })
+      } else {
+        continueLogin(result.next, navigate, realm_name)
+      }
+    } catch (error) {
+      setContinuationError(apiErrorMessage(error, t('verify_email.continue_failed')))
+    } finally {
+      inFlight.current = false
+      setIsContinuing(false)
+    }
+  }, [navigate, realm_name, t])
+
+  useEffect(() => {
+    if (state !== 'success' || hasTriedContinuation.current) return
+    hasTriedContinuation.current = true
+    void resumeLogin()
+  }, [state, resumeLogin])
+
+  // Verification succeeded. Retry only continuation, without reusing the email token.
+  if (continuationError) {
+    return (
+      <div className='flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center'>
+        <h1 className='text-2xl font-semibold'>{t('email_verified.title')}</h1>
+        <p>{t('verify_email.continue_failed')}</p>
+        <p role='alert'>{continuationError}</p>
+        <Button onClick={() => void resumeLogin()} disabled={isContinuing}>
+          {t('verify_email.retry_continue')}
+        </Button>
+      </div>
+    )
   }
-
-  // Verification just succeeded — try to chain an auth call if we still
-  // have the registration context. Without context, jump straight to the
-  // success screen so the user isn't stuck on a "verifying…" message.
-  useEffect(() => {
-    if (state !== 'success' || hasTriedAuth.current) return
-
-    const context = getVerifyEmailContext()
-    if (!context || context.realm !== realm_name) {
-      goToSuccess()
-      return
-    }
-
-    hasTriedAuth.current = true
-    authenticate({
-      clientId: context.clientId,
-      realm: context.realm,
-      data: {},
-    })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, realm_name, authenticate])
-
-  // Authentication result handler. If the backend hands back a redirect
-  // URL or a follow-up required action, we honour it. Otherwise (most
-  // common case — verification just confirmed the email, no further
-  // step needed), drop the user on `/email-verified`.
-  useEffect(() => {
-    if (!authenticateData) return
-
-    clearVerifyEmailContext()
-
-    if (authenticateData.url) {
-      followServerRedirect(authenticateData.url)
-      return
-    }
-
-    if (
-      authenticateData.status === AuthenticationStatus.RequiresActions &&
-      authenticateData.required_actions &&
-      authenticateData.required_actions.length > 0
-    ) {
-      const first = authenticateData.required_actions[0]
-      window.location.href = `/realms/${realm_name}/authentication/required-action?execution=${first.toUpperCase()}`
-      return
-    }
-
-    goToSuccess()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authenticateData, realm_name])
-
-  // Visual: the user's custom verify_email tree (if any) renders inside
-  // Portal; otherwise `<PageVerifyEmail>` fallback shows the loading /
-  // expired / error states. Either way the orchestration above is what
-  // drives the actual flow.
   return (
     <PortalLayoutWrapper pageType={PORTAL_PAGE_TYPE.VERIFY_EMAIL}>
       <PageVerifyEmail state={state} />

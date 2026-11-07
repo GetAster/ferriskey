@@ -8,7 +8,6 @@ import { useParams } from 'react-router'
 import { toast } from 'sonner'
 import { apiErrorMessage } from '@/lib/api-error'
 import { AUTH_NAMESPACE } from '../../constants'
-import { storeVerifyEmailContext } from './verify-email-context'
 
 const RESEND_COOLDOWN_SECONDS = 60
 
@@ -16,18 +15,7 @@ export default function VerifyEmailFeature() {
   const { realm_name } = useParams<RouterParams>()
   const { t } = useTranslation(AUTH_NAMESPACE)
   const [cooldown, setCooldown] = useState(0)
-
   const { mutate: resendEmail, isPending } = useResendVerificationEmailMutation()
-
-  // Store auth context for use after email verification
-  useEffect(() => {
-    if (realm_name) {
-      storeVerifyEmailContext({
-        realm: realm_name,
-        clientId: 'security-admin-console', // TODO: get from URL params if needed
-      })
-    }
-  }, [realm_name])
 
   useEffect(() => {
     if (cooldown > 0) {
@@ -57,7 +45,7 @@ export default function VerifyEmailFeature() {
   }
 
   return (
-    <div className='flex flex-col items-center justify-center min-h-screen p-4'>
+    <div className='flex flex-col items-center justify-center p-4'>
       <div className='max-w-md w-full space-y-6 text-center'>
         <div className='mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center'>
           <Mail className='w-8 h-8 text-blue-600' />
@@ -68,6 +56,7 @@ export default function VerifyEmailFeature() {
         <p className='text-muted-foreground'>{t('verify_email.description')}</p>
 
         <p className='text-sm text-muted-foreground'>{t('verify_email.spam_hint')}</p>
+
 
         <div className='pt-4'>
           <Button

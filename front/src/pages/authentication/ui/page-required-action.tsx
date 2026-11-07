@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import ConfigureOtpFeature from '../feature/execution/configure-otp-feature'
 import UpdatePasswordFeature from '@/pages/authentication/feature/execution/update-password-feature.tsx'
 import ConfigurePasskeyFeature from '../feature/execution/configure-passkey-feature'
+import VerifyEmailContinue from '../feature/execution/verify-email-continue'
 import VerifyEmailFeature from '../feature/execution/verify-email-feature'
 import { PortalLayoutWrapper } from '../components/portal-layout-wrapper'
 import { AUTH_NAMESPACE, PORTAL_PAGE_TYPE } from '../constants'
@@ -35,9 +36,12 @@ export default function PageRequiredAction({ execution }: PageRequiredActionProp
     .with(RequiredAction.UpdatePassword, () => <UpdatePasswordFeature />)
     .with(RequiredAction.ConfigurePasskey, () => <ConfigurePasskeyFeature />)
     .with(RequiredAction.VerifyEmail, () => (
-      <PortalLayoutWrapper pageType={PORTAL_PAGE_TYPE.VERIFY_EMAIL}>
-        <VerifyEmailFeature />
-      </PortalLayoutWrapper>
+      <div className='flex min-h-screen flex-col justify-center'>
+        <PortalLayoutWrapper pageType={PORTAL_PAGE_TYPE.VERIFY_EMAIL}>
+          <VerifyEmailFeature />
+        </PortalLayoutWrapper>
+        <VerifyEmailContinue />
+      </div>
     ))
     .otherwise(() => <div>{t('required_action.none')}</div>)
 }

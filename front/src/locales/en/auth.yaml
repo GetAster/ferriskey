@@ -160,6 +160,11 @@ verify_email:
   missing_context: 'Unable to resend email: missing authentication context'
   sent: Verification email sent! Check your inbox.
   resend_failed: Failed to resend verification email
+  continue: I've verified my email
+  retry_continue: Try again
+  continue_failed: We could not continue sign-in. Please try again.
+  sign_in_expired: This sign-in is no longer available. Return to the app and start signing in again.
+  not_verified: Your email is not verified yet. Open the verification link, then try again.
 
 verify_email_state:
   checking: Verifying your email...
@@ -179,6 +184,7 @@ check_email:
 
 email_verified:
   title: Email verified
+  return_to_sign_in: Return to your original sign-in page to continue. If it is no longer open, start signing in again from the app you were using.
   description: Your email address has been confirmed. You can now sign in to your account.
   action: Continue to sign in
 

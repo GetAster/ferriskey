@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import type { BaseQuery } from '.'
 import type { Schemas } from './api.client'
+import { requestDevice } from './device-request'
 
 export const useDeviceVerify = () => {
   return useMutation({
@@ -8,10 +9,7 @@ export const useDeviceVerify = () => {
       realm,
       data,
     }: BaseQuery & { data: Schemas.DeviceVerifyRequest }) => {
-      return window.tanstackApi.client.post('/realms/{realm_name}/device/verify', {
-        path: { realm_name: realm ?? 'master' },
-        body: data,
-      } as never) as Promise<Schemas.DeviceVerifyResponse>
+      return requestDevice<Schemas.DeviceVerifyResponse>(window.apiUrl, realm ?? 'master', { data })
     },
   })
 }
@@ -27,10 +25,7 @@ export const useDevicePreview = ({
     retry: false,
     staleTime: 0,
     queryFn: async () => {
-      return window.tanstackApi.client.get('/realms/{realm_name}/device/preview', {
-        path: { realm_name: realm ?? 'master' },
-        query: { user_code: userCode },
-      } as never) as Promise<Schemas.DeviceVerificationPreview>
+      return requestDevice<Schemas.DeviceVerificationPreview>(window.apiUrl, realm ?? 'master', { userCode })
     },
   })
 }
