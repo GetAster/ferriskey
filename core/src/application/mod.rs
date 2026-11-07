@@ -241,6 +241,25 @@ pub async fn create_managed_service(
     secrets_encryption_keys: &str,
     run_schema_migrations: bool,
 ) -> Result<(ApplicationService, workers::ApplicationShutdown), CoreError> {
+    let realm_email_limit = match std::env::var("EMAIL_REALM_SENDS_PER_HOUR") {
+        Ok(value) => value
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=100_000).contains(n))
+            .ok_or_else(|| {
+                CoreError::Configuration(
+                    "EMAIL_REALM_SENDS_PER_HOUR must be between 1 and 100000".into(),
+                )
+            })?,
+        Err(std::env::VarError::NotPresent) => {
+            ferriskey_domain::common::email_limits::DEFAULT_REALM_EMAILS_PER_HOUR
+        }
+        Err(_) => {
+            return Err(CoreError::Configuration(
+                "EMAIL_REALM_SENDS_PER_HOUR must be valid text".into(),
+            ));
+        }
+    };
     let mut workers = workers::ApplicationShutdown::default();
     let secret_cipher = SecretCipher::from_config(secrets_encryption_keys)
         .map_err(|error| CoreError::Configuration(error.to_string()))?;
@@ -475,6 +494,9 @@ pub async fn create_managed_service(
     ));
     let resource_owner = Arc::new(PostgresResourceOwnerRepository::new(postgres.get_db()));
     let email_port = Arc::new(SmtpEmailPort::new());
+
+    let email_limits =
+        Arc::new(ferriskey_domain::common::email_limits::EmailSendLimits::new(realm_email_limit));
     let password_reset_token =
         Arc::new(PostgresPasswordResetTokenRepository::new(postgres.get_db()));
 
@@ -572,7 +594,8 @@ pub async fn create_managed_service(
         mjml_renderer.clone(),
         webhook.clone(),
         security_event.clone(),
-    );
+    )
+    .with_email_limits(email_limits.clone());
 
     let client_metadata_cleartext = config.client_metadata_allow_private_endpoints;
     if client_metadata_cleartext {
@@ -796,7 +819,8 @@ pub async fn create_managed_service(
             elevation.clone(),
             login_admission.clone(),
             flow_recorder.clone(),
-        ),
+        )
+        .with_email_limits(email_limits),
         account_security_service:
             crate::domain::account_security::services::AccountSecurityServiceImpl::new(
                 credential.clone(),

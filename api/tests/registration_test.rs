@@ -134,7 +134,9 @@ mod tests {
             .await
             .expect("initialize application");
 
-        let args = Arc::new(Args::default());
+        let mut args = Args::default();
+        args.server.trust_forwarded_for = true;
+        let args = Arc::new(args);
         let state = AppState::new(args, service.clone());
         let app = router(state).expect("build router");
 
@@ -203,11 +205,21 @@ mod tests {
     }
 
     async fn register(server: &TestServer, body: Value) -> TestResponse {
+        // Each fixture request represents an independent registrant. Dedicated
+        // email_sending_limits_test exercises repeated requests from one address.
+        static NEXT_IP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let ip = std::net::Ipv4Addr::from(
+            0xc0000200 + NEXT_IP.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        );
         server
             .post(&format!(
                 "/realms/{}/protocol/openid-connect/registrations",
                 realm()
             ))
+            .add_header(
+                "x-forwarded-for",
+                HeaderValue::from_str(&ip.to_string()).unwrap(),
+            )
             .json(&body)
             .await
     }

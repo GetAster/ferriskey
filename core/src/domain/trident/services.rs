@@ -1,3 +1,4 @@
+use ferriskey_domain::common::email_limits::{EmailSendLimits, recipient_hash_hex};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -333,6 +334,7 @@ pub struct TridentServiceImpl<
     pub(crate) user_repository: Arc<UR>,
     pub(crate) realm_repository: Arc<RR>,
     pub(crate) email_port: Arc<ES>,
+    pub(crate) email_limits: Arc<EmailSendLimits>,
     pub(crate) smtp_config_repository: Arc<SC>,
     pub(crate) password_reset_token_repository: Arc<PRT>,
     pub(crate) security_event_repository: Arc<SE>,
@@ -434,6 +436,7 @@ where
             user_repository,
             realm_repository,
             email_port,
+            email_limits: Arc::new(EmailSendLimits::default()),
             smtp_config_repository,
             password_reset_token_repository,
             security_event_repository,
@@ -449,6 +452,32 @@ where
             admission,
             flow_recorder,
         }
+    }
+
+    pub fn with_email_limits(mut self, limits: Arc<EmailSendLimits>) -> Self {
+        self.email_limits = limits;
+        self
+    }
+
+    /// Check client-address attempts before any recipient lookup. Unknown addresses share a bucket.
+    pub async fn check_email_ip(
+        &self,
+        realm_name: &str,
+        ip: Option<std::net::IpAddr>,
+    ) -> Result<(), CoreError> {
+        if let Err(limit) = self.email_limits.check_ip(ip) {
+            if let Ok(scope) = RealmScope::resolve(self.realm_repository.as_ref(), realm_name).await
+            {
+                let _ = self.security_event_repository.store_event(
+                    SecurityEvent::without_actor(scope.id(), SecurityEventType::EmailNotSent, EventStatus::Failure)
+                        .with_details(serde_json::json!({"reason": "email_rate_limited", "dimension": limit.dimension}))
+                ).await.inspect_err(|e| warn!("Failed to record email limit event: {e}"));
+            }
+            return Err(CoreError::EmailRateLimited {
+                retry_after_seconds: limit.retry_after_seconds,
+            });
+        }
+        Ok(())
     }
 
     async fn pending_auth_step_for(
@@ -2234,6 +2263,18 @@ where
         };
         let normalized_email =
             crate::domain::authentication::services::normalize_login_email(&input.email);
+        // Reserve before passwordless signup creates a user, and even for unknown
+        // recipients so throttling cannot disclose account existence.
+        if let Err(limit) = self
+            .email_limits
+            .reserve(realm.id.into(), &normalized_email)
+        {
+            let _ = self.security_event_repository.store_event(
+                SecurityEvent::without_actor(realm.id, SecurityEventType::EmailNotSent, EventStatus::Failure)
+                    .with_details(serde_json::json!({"reason": "email_rate_limited", "dimension": limit.dimension, "recipient_hash": recipient_hash_hex(&normalized_email), "email_type": "magic_link"}))
+            ).await.inspect_err(|e| warn!("Failed to record email limit event: {e}"));
+            return Ok(());
+        }
         let user = match self
             .user_repository
             .get_by_email(&normalized_email, realm.id)
@@ -2638,6 +2679,13 @@ where
             ));
         }
 
+        if let Err(limit) = self.email_limits.reserve(realm.id.into(), &input.email) {
+            let _ = self.security_event_repository.store_event(
+                SecurityEvent::without_actor(realm.id, SecurityEventType::EmailNotSent, EventStatus::Failure)
+                    .with_details(serde_json::json!({"reason": "email_rate_limited", "dimension": limit.dimension, "recipient_hash": recipient_hash_hex(&input.email), "email_type": "password_reset"}))
+            ).await.inspect_err(|e| warn!("Failed to record email limit event: {e}"));
+            return Ok(());
+        }
         let user = match self
             .user_repository
             .get_by_email(&input.email, realm.id)
@@ -3376,6 +3424,47 @@ mod tests {
             remember_me: false,
             user_agent: Some("Mozilla/5.0 (test)".to_string()),
         }
+    }
+
+    #[tokio::test]
+    async fn limited_magic_link_is_success_without_looking_up_or_creating_a_user() {
+        let mut builder = TridentTestBuilder::new();
+        let realm = create_test_realm_with_name("test-realm");
+        let mut settings = create_test_realm_setting(realm.id, false);
+        settings.magic_link_enabled = true;
+        let limits = Arc::new(EmailSendLimits::default());
+        limits.reserve(realm.id.into(), "user@example.com").unwrap();
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_by_name()
+            .returning(move |_| {
+                let realm = realm.clone();
+                Box::pin(async move { Ok(Some(realm)) })
+            });
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                let settings = settings.clone();
+                Box::pin(async move { Ok(Some(settings)) })
+            });
+        Arc::get_mut(&mut builder.security_event_repo)
+            .unwrap()
+            .expect_store_event()
+            .times(1)
+            .withf(|event| {
+                event.details.as_ref().is_some_and(|details| {
+                    details["reason"] == "email_rate_limited" && !details.to_string().contains("@")
+                })
+            })
+            .returning(|_| Box::pin(async { Ok(()) }));
+        let service = builder.build().with_email_limits(limits);
+        assert!(
+            service
+                .generate_magic_link(magic_link_input(Uuid::new_v4()))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]

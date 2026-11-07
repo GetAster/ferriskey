@@ -104,6 +104,16 @@ pub async fn registration_handler(
     cookie: CookieManager,
     ValidateJson(req): ValidateJson<RegistrationRequest>,
 ) -> Result<Response<RegistrationResponse>, ApiError> {
+    state
+        .service
+        .check_email_ip(
+            &realm_name,
+            request_context
+                .ip_address
+                .as_deref()
+                .and_then(|ip| ip.parse().ok()),
+        )
+        .await?;
     let settings = state.service.get_login_settings(realm_name.clone()).await?;
 
     if !settings.user_registration_enabled {
