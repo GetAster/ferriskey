@@ -20,6 +20,24 @@ use crate::{
 };
 
 impl TridentService for ApplicationService {
+    async fn continue_login(
+        &self,
+        identity: Identity,
+        realm_name: String,
+        session_code: String,
+        webapp_base_url: String,
+        second_factor_verified: bool,
+    ) -> Result<LoginProgress, CoreError> {
+        self.trident_service
+            .continue_login(
+                identity,
+                realm_name,
+                session_code,
+                webapp_base_url,
+                second_factor_verified,
+            )
+            .await
+    }
     async fn burn_recovery_code(
         &self,
         identity: Identity,

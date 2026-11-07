@@ -14,6 +14,7 @@ pub struct CreateEmailVerificationTokenInput {
     pub user_id: Uuid,
     pub realm_id: Uuid,
     pub token_hash: String,
+    pub email: String,
     pub expires_at: DateTime<Utc>,
 }
 
@@ -41,6 +42,12 @@ pub trait EmailVerificationTokenRepository: Send + Sync {
     ) -> impl std::future::Future<
         Output = Result<Option<Unscoped<EmailVerificationToken>>, CoreError>,
     > + Send;
+
+    /// Atomically consume an unused token and verify only its captured address.
+    fn consume_and_verify(
+        &self,
+        token: &Scoped<EmailVerificationToken>,
+    ) -> impl std::future::Future<Output = Result<bool, CoreError>> + Send;
 
     fn mark_used(
         &self,

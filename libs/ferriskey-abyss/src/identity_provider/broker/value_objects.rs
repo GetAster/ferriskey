@@ -201,6 +201,12 @@ pub struct BrokerCallbackOutput {
     pub client_id: String,
 
     pub browser_session_id: Option<Uuid>,
+
+    /// Pending local actions after the provider established the primary identity.
+    #[serde(default)]
+    pub required_actions: Vec<ferriskey_domain::user::entities::RequiredAction>,
+    #[serde(default)]
+    pub second_factor_pending: bool,
 }
 
 /// User info extracted from IdP tokens

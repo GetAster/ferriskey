@@ -1,4 +1,8 @@
-use axum::extract::{Path, State};
+use axum::{
+    Extension,
+    extract::{Path, State},
+};
+use ferriskey_core::domain::authentication::value_objects::Identity;
 use ferriskey_core::domain::email_verification::ports::EmailVerificationService;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -8,7 +12,6 @@ use ferriskey_api_core::api_entities::{
     response::Response,
 };
 use ferriskey_api_core::app_state::AppState;
-use ferriskey_api_core::decoded_token::OptionalToken;
 use ferriskey_api_core::request_context::RequestContext;
 use ferriskey_api_core::url::WebappUrl;
 
@@ -23,7 +26,7 @@ pub struct ResendVerificationEmailResponse {
     path = "/login-actions/resend-verification-email",
     tag = "auth",
     summary = "Resend verification email",
-    description = "Resend the email verification link to the user's email address. Requires a valid Bearer token in the Authorization header.",
+    description = "Resend the email verification link to the user's email address. Requires the validated login-action cookie for the pending login.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -39,10 +42,9 @@ pub async fn resend_verification_email_handler(
     State(state): State<AppState>,
     WebappUrl(verification_base_url): WebappUrl,
     context: RequestContext,
-    OptionalToken(token): OptionalToken,
+    Extension(identity): Extension<Identity>,
 ) -> Result<Response<ResendVerificationEmailResponse>, ApiError> {
-    let token = token.ok_or_else(|| ApiError::Unauthorized("Missing or invalid token".into()))?;
-    let user_id = token.claims.sub;
+    let user_id = identity.id();
 
     state
         .service

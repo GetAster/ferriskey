@@ -4,6 +4,8 @@ use axum::{
     response::IntoResponse,
 };
 use axum_cookie::CookieManager;
+use ferriskey_api_core::login_step::login_action_cookie;
+use ferriskey_core::domain::authentication::ports::AuthService;
 use ferriskey_core::domain::trident::ports::{
     MagicLinkInput, TridentService, VerifyMagicLinkInput,
 };
@@ -119,6 +121,7 @@ pub async fn send_magic_link(
     )
 )]
 pub async fn verify_magic_link(
+    Path(realm_name): Path<String>,
     State(state): State<AppState>,
     FullUrl(_, base_url): FullUrl,
     WebappUrl(webapp_url): WebappUrl,
@@ -141,18 +144,50 @@ pub async fn verify_magic_link(
 
     debug!("Magic link verified");
 
-    // Return success with redirect URL
+    let pending = verified.login_url.is_empty();
+    let mut headers = sso_cookie::headers(verified.sso_session, base_url.starts_with("https"))?;
+    if pending {
+        let token = state
+            .service
+            .issue_primary_login_action_token(
+                realm_name.clone(),
+                verified.session_code,
+                verified.user_id,
+                format!(
+                    "{}{}",
+                    base_url.trim_end_matches('/'),
+                    state.args.server.root_path
+                ),
+                verified.second_factor_verified,
+            )
+            .await?;
+        headers.append(
+            header::SET_COOKIE,
+            login_action_cookie(
+                token,
+                &state.args.server.root_path,
+                &realm_name,
+                base_url.starts_with("https"),
+            )?,
+        );
+    }
     let response = AuthenticateResponse {
-        status: AuthenticationStatus::Success,
-        url: Some(verified.login_url),
-        required_actions: None,
+        status: if !pending {
+            AuthenticationStatus::Success
+        } else if verified.pending_actions.is_empty() {
+            AuthenticationStatus::RequiresOtpChallenge
+        } else {
+            AuthenticationStatus::RequiresActions
+        },
+        url: (!pending).then_some(verified.login_url),
+        required_actions: pending.then_some(verified.pending_actions),
         email: None,
-        message: Some("Magic link authentication successful".to_string()),
+        message: None,
     };
 
     Ok((
         StatusCode::OK,
-        sso_cookie::headers(verified.sso_session, base_url.starts_with("https"))?,
+        headers,
         [(header::REFERRER_POLICY, "no-referrer")],
         axum::Json(response),
     )

@@ -22,6 +22,8 @@ pub struct RealmLoginSetting {
     pub name: String,
     pub display_name: Option<String>,
     pub user_registration_enabled: bool,
+    #[serde(default)]
+    pub passwordless_enabled: bool,
     pub forgot_password_enabled: bool,
     pub remember_me_enabled: bool,
     pub email_verification_enabled: bool,
@@ -40,10 +42,12 @@ impl From<RealmSetting> for RealmLoginSetting {
         Self {
             name: String::new(),
             display_name: None,
-            forgot_password_enabled: value.forgot_password_enabled,
+            passwordless_enabled: value.passwordless_enabled,
+            forgot_password_enabled: value.forgot_password_enabled && !value.passwordless_enabled,
             remember_me_enabled: value.remember_me_enabled,
             user_registration_enabled: value.user_registration_enabled,
-            email_verification_enabled: value.email_verification_enabled,
+            email_verification_enabled: value.email_verification_enabled
+                || value.passwordless_enabled,
             identity_providers: Vec::new(),
             magic_link_enabled: value.magic_link_enabled,
             magic_link_ttl: value.magic_link_ttl,

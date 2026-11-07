@@ -14,6 +14,7 @@ use super::handlers::{
     authorization_server_metadata::{
         __path_get_authorization_server_metadata, get_authorization_server_metadata,
     },
+    continue_login::{__path_continue_login, continue_login},
     device_authorization::{__path_device_authorization, device_authorization},
     device_verify::{
         __path_device_preview, __path_device_verification_page, __path_device_verify,
@@ -42,6 +43,7 @@ use ferriskey_api_core::{app_state::AppState, auth::auth_any_client};
         exchange_token,
         introspect_token,
         authenticate,
+        continue_login,
         device_authorization,
         device_preview,
         device_verification_page,
@@ -139,9 +141,22 @@ pub fn authentication_routes(state: AppState, root_path: &str) -> Router<AppStat
             &format!("{root_path}/realms/{{realm_name}}/login-actions/verify-email"),
             post(verify_email_handler),
         )
-        .route(
-            &format!("{root_path}/realms/{{realm_name}}/login-actions/resend-verification-email"),
-            post(resend_verification_email_handler),
+        .merge(
+            Router::new()
+                .route(
+                    &format!(
+                        "{root_path}/realms/{{realm_name}}/login-actions/resend-verification-email"
+                    ),
+                    post(resend_verification_email_handler),
+                )
+                .route(
+                    &format!("{root_path}/realms/{{realm_name}}/login-actions/continue"),
+                    post(continue_login),
+                )
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    ferriskey_api_core::auth::auth_login_actions,
+                )),
         )
         .route(
             &format!("{root_path}/realms/{{realm_name}}/protocol/openid-connect/certs"),

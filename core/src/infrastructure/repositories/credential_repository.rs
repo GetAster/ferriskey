@@ -72,6 +72,23 @@ impl PostgresCredentialRepository {
         Self { db, cipher }
     }
 
+    async fn ensure_password_allowed(&self, user_id: uuid::Uuid) -> Result<(), CredentialError> {
+        let user = crate::entity::users::Entity::find_by_id(user_id)
+            .one(&self.db)
+            .await
+            .map_err(|_| CredentialError::CreateCredentialError)?
+            .ok_or(CredentialError::CreateCredentialError)?;
+        let settings = crate::entity::realm_settings::Entity::find()
+            .filter(crate::entity::realm_settings::Column::RealmId.eq(user.realm_id))
+            .one(&self.db)
+            .await
+            .map_err(|_| CredentialError::CreateCredentialError)?;
+        if settings.is_some_and(|settings| settings.passwordless_enabled) {
+            return Err(CredentialError::PasswordAuthenticationDisabled);
+        }
+        Ok(())
+    }
+
     fn opened(&self, mut credential: Credential) -> Credential {
         if credential.credential_type != CredentialType::Otp {
             return credential;
@@ -104,6 +121,9 @@ impl CredentialRepository for PostgresCredentialRepository {
         label: String,
         temporary: bool,
     ) -> Result<Credential, CredentialError> {
+        if credential_type == "password" {
+            self.ensure_password_allowed(user_id).await?;
+        }
         let (now, _) = generate_timestamp();
 
         let payload = ActiveModel {
@@ -160,6 +180,7 @@ impl CredentialRepository for PostgresCredentialRepository {
         hash_result: HashResult,
         temporary: bool,
     ) -> Result<(), CredentialError> {
+        self.ensure_password_allowed(user_id).await?;
         let (now, _) = generate_timestamp();
 
         let credential_data = serde_json::to_value(CredentialData::new_hash(
@@ -234,6 +255,7 @@ impl CredentialRepository for PostgresCredentialRepository {
         hash_result: HashResult,
         temporary: bool,
     ) -> Result<(), CredentialError> {
+        self.ensure_password_allowed(user_id).await?;
         let (now, _) = generate_timestamp();
         let credential_data = serde_json::to_value(CredentialData::new_hash(
             hash_result.hash_iterations,
@@ -352,6 +374,9 @@ impl CredentialRepository for PostgresCredentialRepository {
         label: Option<String>,
         credential_data: serde_json::Value,
     ) -> Result<Credential, CredentialError> {
+        if credential_type == "password" {
+            self.ensure_password_allowed(user_id).await?;
+        }
         let (now, _) = generate_timestamp();
 
         let id = generate_uuid_v7();
@@ -641,6 +666,187 @@ mod tests {
         .execute(pool)
         .await
         .expect("insert bcrypt credential");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn passwordless_policy_blocks_every_password_write_and_invalidates_sessions() {
+        let fixture = setup().await;
+        let user_id = insert_user(&fixture.pool).await;
+        let realm_id: Uuid = sqlx::query_scalar("SELECT realm_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO realm_settings (id, realm_id) VALUES ($1, $2)")
+            .bind(Uuid::new_v4())
+            .bind(realm_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        insert_bcrypt_password(&fixture.pool, user_id, false).await;
+        assert!(
+            sqlx::query(
+                "UPDATE realm_settings SET passwordless_enabled = true WHERE realm_id = $1"
+            )
+            .bind(realm_id)
+            .execute(&fixture.pool)
+            .await
+            .is_err()
+        );
+        fixture
+            .repository
+            .delete_password_credential(user_id)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO user_required_actions (id,user_id,action) VALUES ($1,$2,'update_password')")
+            .bind(Uuid::new_v4()).bind(user_id).execute(&fixture.pool).await.unwrap();
+        assert!(
+            sqlx::query(
+                "UPDATE realm_settings SET passwordless_enabled = true WHERE realm_id = $1"
+            )
+            .bind(realm_id)
+            .execute(&fixture.pool)
+            .await
+            .is_err()
+        );
+        sqlx::query("DELETE FROM user_required_actions WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+
+        sqlx::query("INSERT INTO user_sessions (id, user_id, realm_id, expires_at) VALUES ($1,$2,$3,NOW() + interval '1 hour')")
+            .bind(Uuid::new_v4()).bind(user_id).bind(realm_id).execute(&fixture.pool).await.unwrap();
+        sqlx::query("UPDATE realm_settings SET passwordless_enabled = true WHERE realm_id = $1")
+            .bind(realm_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM user_sessions WHERE realm_id = $1")
+                .bind(realm_id)
+                .fetch_one(&fixture.pool)
+                .await
+                .unwrap();
+        assert_eq!(count, 0);
+        let policy: (bool, bool) = sqlx::query_as("SELECT email_verification_enabled, forgot_password_enabled FROM realm_settings WHERE realm_id = $1")
+            .bind(realm_id).fetch_one(&fixture.pool).await.unwrap();
+        assert_eq!(policy, (true, false));
+        assert!(sqlx::query("INSERT INTO user_required_actions (id,user_id,action) VALUES ($1,$2,'update_password')")
+            .bind(Uuid::new_v4()).bind(user_id).execute(&fixture.pool).await.is_err());
+        assert!(matches!(
+            fixture
+                .repository
+                .create_credential(
+                    user_id,
+                    "password".into(),
+                    argon2id_hash(),
+                    "".into(),
+                    false
+                )
+                .await,
+            Err(CredentialError::PasswordAuthenticationDisabled)
+        ));
+        assert!(matches!(
+            fixture
+                .repository
+                .set_password_credential(user_id, argon2id_hash(), false)
+                .await,
+            Err(CredentialError::PasswordAuthenticationDisabled)
+        ));
+        assert!(matches!(
+            fixture
+                .repository
+                .update_password_credential(user_id, "old", argon2id_hash(), false)
+                .await,
+            Err(CredentialError::PasswordAuthenticationDisabled)
+        ));
+        assert!(matches!(
+            fixture
+                .repository
+                .create_custom_credential(
+                    user_id,
+                    "password".into(),
+                    "hash".into(),
+                    None,
+                    serde_json::json!({})
+                )
+                .await,
+            Err(CredentialError::PasswordAuthenticationDisabled)
+        ));
+        assert!(sqlx::query("INSERT INTO credentials (id, user_id, credential_type, secret_data, credential_data) VALUES ($1,$2,'password','hash','{}')")
+            .bind(Uuid::new_v4()).bind(user_id).execute(&fixture.pool).await.is_err());
+        // A failed password write must not affect other credential types.
+        fixture
+            .repository
+            .create_custom_credential(
+                user_id,
+                "otp".into(),
+                "secret".into(),
+                None,
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn password_write_and_policy_activation_cannot_race() {
+        let fixture = setup().await;
+        let user_id = insert_user(&fixture.pool).await;
+        let realm_id: Uuid = sqlx::query_scalar("SELECT realm_id FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&fixture.pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO realm_settings (id, realm_id) VALUES ($1, $2)")
+            .bind(Uuid::new_v4())
+            .bind(realm_id)
+            .execute(&fixture.pool)
+            .await
+            .unwrap();
+        let mut write = fixture.pool.begin().await.unwrap();
+        sqlx::query("INSERT INTO credentials (id, user_id, credential_type, secret_data, credential_data) VALUES ($1,$2,'password','hash','{}')")
+            .bind(Uuid::new_v4()).bind(user_id).execute(&mut *write).await.unwrap();
+        let pool = fixture.pool.clone();
+        let mut activation = tokio::spawn(async move {
+            sqlx::query("UPDATE realm_settings SET passwordless_enabled = true WHERE realm_id = $1")
+                .bind(realm_id)
+                .execute(&pool)
+                .await
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut activation)
+                .await
+                .is_err()
+        );
+        write.commit().await.unwrap();
+        assert!(activation.await.unwrap().is_err());
+        fixture
+            .repository
+            .delete_password_credential(user_id)
+            .await
+            .unwrap();
+        let mut activation = fixture.pool.begin().await.unwrap();
+        sqlx::query("UPDATE realm_settings SET passwordless_enabled = true WHERE realm_id = $1")
+            .bind(realm_id)
+            .execute(&mut *activation)
+            .await
+            .unwrap();
+        let pool = fixture.pool.clone();
+        let mut write = tokio::spawn(async move {
+            sqlx::query("INSERT INTO credentials (id, user_id, credential_type, secret_data, credential_data) VALUES ($1,$2,'password','hash','{}')")
+                .bind(Uuid::new_v4()).bind(user_id).execute(&pool).await
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), &mut write)
+                .await
+                .is_err()
+        );
+        activation.commit().await.unwrap();
+        assert!(write.await.unwrap().is_err());
     }
 
     fn argon2id_hash() -> HashResult {

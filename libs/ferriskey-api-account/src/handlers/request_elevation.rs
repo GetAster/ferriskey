@@ -2,7 +2,9 @@ use axum::{
     Extension,
     extract::{Path, State},
 };
+use axum_cookie::CookieManager;
 use chrono::{DateTime, Utc};
+use ferriskey_api_core::sso_cookie::SSO_SESSION_COOKIE;
 use ferriskey_api_core::{
     api_entities::{
         api_error::{ApiError, ApiErrorBody, ApiErrorResponse, ValidateJson},
@@ -31,7 +33,7 @@ pub struct ElevationResponse {
     path = "/me/reauthenticate",
     tag = "account",
     summary = "Re-authenticate to unlock sensitive account operations",
-    description = "Verifies a credential the caller already holds and returns a short-lived elevation bound to the caller's session. Every sensitive account operation requires one. Supply exactly one of `password` or `otp_code`. Anything that adds, replaces or removes a sign-in credential requires the elevation to have been proved with a password — a second factor must not be able to rotate the factors, including itself. Changing the password is the exception: it verifies the current password in the body, which is the same proof.",
+    description = "Verifies a credential the caller already holds and returns a short-lived elevation bound to the caller's session. Every sensitive account operation requires one. Supply exactly one of `password`, `otp_code`, or `recent_authentication: true`. Passwordless realms accept recent authentication only for a verified email account whose same live session authenticated within five minutes and whose FERRISKEY_SSO browser cookie matches the access-token session. Reauthenticate through the normal login flow when stale. Refreshing a token does not renew this interval. Credential changes require a password or recent-authentication proof; OTP alone cannot rotate credentials.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -55,14 +57,30 @@ pub async fn request_elevation(
     State(state): State<AppState>,
     Extension(identity): Extension<Identity>,
     CallerSession(session_id): CallerSession,
+    cookies: CookieManager,
     ValidateJson(payload): ValidateJson<RequestElevationValidator>,
 ) -> Result<Response<ElevationResponse>, ApiError> {
-    let proof = match (payload.password, payload.otp_code) {
-        (Some(password), None) => ElevationProof::Password(password),
-        (None, Some(code)) => ElevationProof::Otp(code),
+    let proof = match (
+        payload.password,
+        payload.otp_code,
+        payload.recent_authentication,
+    ) {
+        (Some(password), None, false) => ElevationProof::Password(password),
+        (None, Some(code), false) => ElevationProof::Otp(code),
+        (None, None, true) => ElevationProof::RecentAuthentication {
+            sso_cookie: cookies
+                .get(SSO_SESSION_COOKIE)
+                .map(|cookie| cookie.value().to_string())
+                .ok_or_else(|| {
+                    ApiError::Forbidden(ApiErrorBody::new(
+                        "Recent authentication requires the browser SSO cookie",
+                        "elevation_required",
+                    ))
+                })?,
+        },
         _ => {
             return Err(ApiError::BadRequest(ApiErrorBody::new(
-                "Supply exactly one of password or otp_code",
+                "Supply exactly one of password, otp_code or recent_authentication",
                 "invalid_elevation_proof",
             )));
         }

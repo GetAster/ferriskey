@@ -31,7 +31,7 @@ use crate::domain::client::redirect_uri_matching::redirect_uri_matches_any;
 use crate::domain::common::entities::app_errors::CoreError;
 use crate::domain::realm::entities::{RealmScope, Scoped, UnscopedOption};
 use crate::domain::realm::ports::RealmRepository;
-use crate::domain::user::entities::User;
+use crate::domain::user::entities::{RequiredAction, User};
 use crate::domain::user::ports::UserRepository;
 use crate::domain::user::value_objects::CreateUserRequest;
 
@@ -500,6 +500,11 @@ enum CodeTarget {
 #[derive(Debug, PartialEq, Eq)]
 enum CodeIssue {
     Issued,
+    ActionsRequired {
+        required_actions: Vec<RequiredAction>,
+        second_factor_pending: bool,
+        browser_session_id: Uuid,
+    },
     ConsentRequired {
         redirect_url: String,
         browser_session_id: Option<Uuid>,
@@ -543,12 +548,28 @@ where
     let auth_session_id = auth_session.id;
     let admitted = admission
         .admit(AdmitLoginInput {
+            primary_authentication: true,
             user_id,
             auth_session,
             scope: scope.clone(),
             webapp_base_url: webapp_base_url.to_string(),
         })
         .await?;
+
+    if let LoginAdmission::ActionsRequired {
+        required_actions,
+        second_factor_pending,
+    } = &admitted
+    {
+        // Bind the proved identity before issuing a limited action cookie. No
+        // authorization code is created while local requirements remain.
+        sessions.update_user_id(auth_session_id, user_id).await?;
+        return Ok(CodeIssue::ActionsRequired {
+            required_actions: required_actions.clone(),
+            second_factor_pending: *second_factor_pending,
+            browser_session_id: auth_session_id,
+        });
+    }
 
     if let LoginAdmission::ConsentRequired { redirect_url } = admitted {
         return Ok(CodeIssue::ConsentRequired {
@@ -952,6 +973,39 @@ where
             .delete(&broker_session)
             .await?;
 
+        if let CodeIssue::ActionsRequired {
+            required_actions,
+            second_factor_pending,
+            browser_session_id,
+        } = &issue
+        {
+            let page = if *second_factor_pending {
+                "otp".to_string()
+            } else {
+                let action = required_actions
+                    .first()
+                    .ok_or(CoreError::InternalServerError)?;
+                format!(
+                    "required-action?execution={}",
+                    action.to_string().to_uppercase()
+                )
+            };
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/{page}",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user,
+                client_id: client.client_id,
+                browser_session_id: Some(*browser_session_id),
+                required_actions: required_actions.clone(),
+                second_factor_pending: *second_factor_pending,
+            });
+        }
+
         if let CodeIssue::ConsentRequired {
             redirect_url,
             browser_session_id,
@@ -964,6 +1018,8 @@ where
                 is_new_user,
                 client_id: client.client_id,
                 browser_session_id,
+                required_actions: Vec::new(),
+                second_factor_pending: false,
             });
         }
 
@@ -984,6 +1040,8 @@ where
             is_new_user,
             client_id: client.client_id,
             browser_session_id: None,
+            required_actions: Vec::new(),
+            second_factor_pending: false,
         })
     }
 
@@ -1448,6 +1506,61 @@ mod tests {
             CodeIssue::ConsentRequired {
                 redirect_url: "https://app.example/consent?consent_token=t".to_string(),
                 browser_session_id: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn a_brokered_login_with_required_actions_binds_identity_without_issuing_code() {
+        let (scope, session) = scope_and_session();
+        let session_id = session.id;
+        let user_id = Uuid::new_v4();
+        let mut sessions = MockAuthSessionRepository::new();
+        let found = session.clone();
+        sessions.expect_get_by_session_code().returning(move |_| {
+            let found = found.clone();
+            Box::pin(async move { Ok(Unscoped::new(found)) })
+        });
+        sessions.expect_update_code().never();
+        sessions
+            .expect_update_user_id()
+            .withf(move |id, user| *id == session_id && *user == user_id)
+            .times(1)
+            .returning(move |_, _| {
+                let session = session.clone();
+                Box::pin(async move { Ok(session) })
+            });
+        let mut admission = MockLoginAdmissionPort::new();
+        admission
+            .expect_admit()
+            .withf(|input| input.primary_authentication)
+            .times(1)
+            .returning(|_| {
+                Box::pin(async {
+                    Ok(LoginAdmission::ActionsRequired {
+                        required_actions: vec![RequiredAction::VerifyEmail],
+                        second_factor_pending: false,
+                    })
+                })
+            });
+        let issue = issue_login_code(
+            &sessions,
+            &admission,
+            &scope,
+            user_id,
+            CodeTarget::Existing(session_id),
+            "https://app.example",
+            "must-not-issue",
+            None,
+        )
+        .await
+        .expect("required actions continue the login");
+        assert_eq!(
+            issue,
+            CodeIssue::ActionsRequired {
+                required_actions: vec![RequiredAction::VerifyEmail],
+                second_factor_pending: false,
+                browser_session_id: session_id,
             }
         );
     }

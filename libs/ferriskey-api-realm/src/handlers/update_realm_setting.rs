@@ -164,6 +164,7 @@ pub async fn update_realm_setting(
             UpdateRealmSettingInput {
                 realm_name: name,
                 algorithm: payload.default_signing_algorithm,
+                passwordless_enabled: payload.passwordless_enabled,
                 forgot_password_enabled: payload.forgot_password_enabled,
                 remember_me_enabled: payload.remember_me_enabled,
                 user_registration_enabled: payload.user_registration_enabled,

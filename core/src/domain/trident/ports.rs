@@ -115,6 +115,10 @@ pub struct PasskeyAuthenticateInput {
 }
 
 pub struct PasskeyAuthenticateOutput {
+    pub pending_actions: Vec<RequiredAction>,
+    pub user_id: Uuid,
+    pub session_code: Uuid,
+    pub second_factor_verified: bool,
     pub login_url: String,
     pub sso_session: Option<OpenedSsoSession>,
 }
@@ -238,6 +242,10 @@ pub struct CompletePasswordResetOutput {
 
 #[derive(Debug)]
 pub struct VerifyMagicLinkOutput {
+    pub pending_actions: Vec<RequiredAction>,
+    pub user_id: Uuid,
+    pub session_code: Uuid,
+    pub second_factor_verified: bool,
     pub login_url: String,
     pub sso_session: Option<OpenedSsoSession>,
 }
@@ -332,6 +340,14 @@ pub trait RecoveryCodeFormatter: Send + Sync {
 }
 
 pub trait TridentService: Send + Sync {
+    fn continue_login(
+        &self,
+        identity: Identity,
+        realm_name: String,
+        session_code: String,
+        webapp_base_url: String,
+        second_factor_verified: bool,
+    ) -> impl Future<Output = Result<LoginProgress, CoreError>> + Send;
     fn generate_recovery_code(
         &self,
         identity: Identity,
@@ -428,6 +444,7 @@ pub trait MagicLinkRepository: Send + Sync {
         magic_token_hash: &HashResult,
         expires_at: DateTime<Utc>,
         auth_session_code: Option<Uuid>,
+        email: String,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
     fn get_by_token_id(
@@ -439,6 +456,10 @@ pub trait MagicLinkRepository: Send + Sync {
         &self,
         magic_token_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Atomically consume a live link and verify only its original contact email.
+    fn consume(&self, magic_token_id: Uuid)
+    -> impl Future<Output = Result<bool, CoreError>> + Send;
 
     fn cleanup_expired(&self, realm_id: Uuid)
     -> impl Future<Output = Result<(), CoreError>> + Send;

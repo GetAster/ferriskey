@@ -450,6 +450,7 @@ export namespace Schemas {
     email_verification_enabled: boolean;
     email_verification_template_id?: (string | null) | undefined;
     email_verification_ttl_hours: number;
+    passwordless_enabled: boolean;
     forgot_password_enabled: boolean;
     id: string;
     id_token_lifetime: number;
@@ -1225,7 +1226,7 @@ export namespace Schemas {
     }>;
     metadata: PageMetadata;
   };
-  export type PasskeyAuthenticateResponse = { login_url: string; status: string };
+  export type PasskeyAuthenticateResponse = { login_url: string; status: string; required_actions?: RequiredAction[] };
   export type PasskeyPublicKeyCredential = Record<string, unknown>;
   export type PasskeyPublicKeyCredentialRequestOptionsJSON = Record<string, unknown>;
   export type PasskeyRequestOptionsRequest = Partial<{ username: string | null }>;
@@ -1317,6 +1318,7 @@ export namespace Schemas {
     default_locale: string;
     display_name?: (string | null) | undefined;
     email_verification_enabled: boolean;
+    passwordless_enabled: boolean;
     forgot_password_enabled: boolean;
     identity_providers: Array<IdentityProviderPresentation>;
     login_aliases: LoginAliases;
@@ -1643,6 +1645,7 @@ export namespace Schemas {
     email_verification_enabled: boolean | null;
     email_verification_template_id: string | null;
     email_verification_ttl_hours: number | null;
+    passwordless_enabled: boolean | null;
     forgot_password_enabled: boolean | null;
     id_token_lifetime: number | null;
     lockout_duration_seconds: number | null;

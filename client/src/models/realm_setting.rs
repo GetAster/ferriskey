@@ -20,6 +20,8 @@ pub struct RealmSetting {
         skip_serializing_if = "Option::is_none"
     )]
     pub default_signing_algorithm: Option<Option<String>>,
+    #[serde(default)]
+    pub passwordless_enabled: bool,
     #[serde(rename = "forgot_password_enabled")]
     pub forgot_password_enabled: bool,
     #[serde(rename = "id")]
@@ -51,6 +53,7 @@ impl RealmSetting {
     ) -> RealmSetting {
         RealmSetting {
             default_signing_algorithm: None,
+            passwordless_enabled: false,
             forgot_password_enabled,
             id,
             magic_link_enabled,

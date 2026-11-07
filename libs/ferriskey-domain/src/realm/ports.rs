@@ -85,6 +85,7 @@ pub trait RealmRepository: Send + Sync {
         realm_id: RealmId,
         algorithm: Option<String>,
         user_registration_enabled: Option<bool>,
+        passwordless_enabled: Option<bool>,
         forgot_password_enabled: Option<bool>,
         remember_me_enabled: Option<bool>,
         magic_link_enabled: Option<bool>,

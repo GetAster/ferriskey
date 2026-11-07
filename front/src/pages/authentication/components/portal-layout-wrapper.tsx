@@ -169,6 +169,23 @@ export function PortalLayoutWrapper({ children, pageType }: Props) {
   // last ~50ms of flash that survived the React-side fallback alone.
   const cachedVars = useMemo(() => readCachedCssVars(realm), [realm])
   const tokens = activeData?.design_tokens
+  const fontUrl = mergeWithDefaults(tokens).fonts.url
+  useEffect(() => {
+    if (!fontUrl) return
+    let url: URL
+    try {
+      url = new URL(fontUrl, window.location.origin)
+    } catch {
+      return
+    }
+    if (url.protocol !== 'https:' && url.origin !== window.location.origin) return
+    const stylesheet = document.createElement('link')
+    stylesheet.rel = 'stylesheet'
+    stylesheet.href = url.href
+    stylesheet.referrerPolicy = 'no-referrer'
+    document.head.appendChild(stylesheet)
+    return () => stylesheet.remove()
+  }, [fontUrl])
   const cssVars = useMemo(() => {
     if (tokens) {
       return themeToCssVars(mergeWithDefaults(tokens)) as unknown as CSSProperties

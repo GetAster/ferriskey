@@ -48,6 +48,25 @@ impl AuthService for ApplicationService {
             .await
     }
 
+    async fn issue_primary_login_action_token(
+        &self,
+        realm_name: String,
+        session_code: uuid::Uuid,
+        user_id: uuid::Uuid,
+        base_url: String,
+        second_factor_verified: bool,
+    ) -> Result<String, CoreError> {
+        self.auth_service
+            .issue_primary_login_action_token(
+                realm_name,
+                session_code,
+                user_id,
+                base_url,
+                second_factor_verified,
+            )
+            .await
+    }
+
     async fn issue_follow_up_login_action_token(
         &self,
         previous: JwtClaim,

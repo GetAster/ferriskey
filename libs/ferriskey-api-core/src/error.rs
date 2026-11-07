@@ -559,6 +559,12 @@ impl From<TokenExchangeError> for ApiError {
 impl From<CredentialError> for ApiError {
     fn from(value: CredentialError) -> Self {
         match value {
+            CredentialError::PasswordAuthenticationDisabled => {
+                ApiError::Forbidden(ApiErrorBody::new(
+                    "Local passwords are disabled for this realm",
+                    "password_authentication_disabled",
+                ))
+            }
             CredentialError::CredentialNotFound => ApiError::NotFound(ApiErrorBody::new(
                 "Credential not found",
                 "credential_not_found",

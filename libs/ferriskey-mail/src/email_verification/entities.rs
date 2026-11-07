@@ -11,6 +11,8 @@ pub struct EmailVerificationToken {
     pub user_id: Uuid,
     pub realm_id: Uuid,
     pub token_hash: String,
+    /// Exact delivery address; legacy tokens without it cannot verify an address.
+    pub email: Option<String>,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub used_at: Option<DateTime<Utc>>,
@@ -51,6 +53,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(!token.is_expired());
@@ -66,6 +69,7 @@ mod tests {
             expires_at: Utc::now() - Duration::hours(1),
             created_at: Utc::now() - Duration::hours(2),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(token.is_expired());
@@ -81,6 +85,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: Some(Utc::now()),
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(token.is_used());
@@ -96,6 +101,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(!token.is_used());
@@ -111,6 +117,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(token.is_valid());
@@ -126,6 +133,7 @@ mod tests {
             expires_at: Utc::now() - Duration::hours(1),
             created_at: Utc::now() - Duration::hours(2),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(!token.is_valid());
@@ -141,6 +149,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: Some(Utc::now()),
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(!token.is_valid());
@@ -156,6 +165,7 @@ mod tests {
             expires_at: Utc::now() - Duration::hours(1),
             created_at: Utc::now() - Duration::hours(2),
             used_at: Some(Utc::now() - Duration::minutes(30)),
+            email: Some("test@example.com".to_string()),
         };
 
         assert!(!token.is_valid());

@@ -13,6 +13,9 @@ pub struct RequestElevationValidator {
 
     #[serde(default)]
     pub otp_code: Option<String>,
+
+    #[serde(default)]
+    pub recent_authentication: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Validate, ToSchema)]

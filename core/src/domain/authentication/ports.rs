@@ -166,6 +166,15 @@ pub trait AuthService: Send + Sync {
         &self,
         input: AuthorizeRequestInput,
     ) -> impl Future<Output = Result<LoginActionGrant, CoreError>> + Send;
+    /// Trusted in-process entry: call only after verifying a primary login proof.
+    fn issue_primary_login_action_token(
+        &self,
+        realm_name: String,
+        session_code: Uuid,
+        user_id: Uuid,
+        base_url: String,
+        second_factor_verified: bool,
+    ) -> impl Future<Output = Result<String, CoreError>> + Send;
     /// Mint the step token for the next hop of a login whose current step token
     /// was just consumed, carrying the second-factor mark forward or setting it.
     fn issue_follow_up_login_action_token(
@@ -328,6 +337,8 @@ pub trait SsoSessionPort: Send + Sync {
 }
 
 pub struct AdmitLoginInput {
+    /// True for a freshly verified primary proof, before local required actions/MFA.
+    pub primary_authentication: bool,
     pub user_id: Uuid,
     pub auth_session: AuthSession,
     pub scope: RealmScope,
@@ -337,7 +348,13 @@ pub struct AdmitLoginInput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LoginAdmission {
     Proceed,
-    ConsentRequired { redirect_url: String },
+    ActionsRequired {
+        required_actions: Vec<crate::domain::user::entities::RequiredAction>,
+        second_factor_pending: bool,
+    },
+    ConsentRequired {
+        redirect_url: String,
+    },
 }
 
 #[cfg_attr(test, mockall::automock)]

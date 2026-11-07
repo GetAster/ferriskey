@@ -239,6 +239,16 @@ impl ApplicationService {
             .get_realm_settings(realm.id())
             .await?
             .ok_or(CoreError::InternalServerError)?;
+        if settings.passwordless_enabled
+            && user.client_id.is_none()
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::Forbidden("Verified contact email is required".into()).into());
+        }
         let lifetime = effective_lifetime(
             input.lifetime_seconds,
             TokenLifetimes::resolve(&settings, &client).access_token,

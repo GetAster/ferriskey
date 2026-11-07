@@ -28,7 +28,7 @@ pub struct ConfirmOtpEnrollmentResponse {
     path = "/me/mfa/otp",
     tag = "account",
     summary = "Confirm an authenticator enrolment",
-    description = "Verifies a code against the secret recorded by `POST /mfa/otp` and promotes it to a real credential, superseding whatever authenticator the account had. Requires an elevation proved with a password: the code alone must not be able to replace the factor it proves.",
+    description = "Verifies a code against the secret recorded by `POST /mfa/otp` and promotes it to a real credential, superseding whatever authenticator the account had. Requires an elevation proved with a password or recent authentication in a passwordless realm: the code alone must not be able to replace the factor it proves.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -41,7 +41,7 @@ pub struct ConfirmOtpEnrollmentResponse {
         (status = 200, description = "Authenticator enrolled", body = ConfirmOtpEnrollmentResponse),
         (status = 400, description = "Invalid request data", body = ApiErrorResponse),
         (status = 401, description = "The code does not match the pending enrolment, there is none, or the account is locked", body = ApiErrorResponse),
-        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password", body = ApiErrorResponse),
+        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password or recent authentication in a passwordless realm", body = ApiErrorResponse),
         (status = 404, description = "No such realm", body = ApiErrorResponse),
         (status = 500, description = "Internal server error", body = ApiErrorResponse),
     )

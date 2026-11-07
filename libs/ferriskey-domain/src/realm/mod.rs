@@ -224,6 +224,8 @@ pub struct RealmSetting {
     pub realm_id: RealmId,
     pub default_signing_algorithm: Option<String>,
     pub user_registration_enabled: bool,
+    #[serde(default)]
+    pub passwordless_enabled: bool,
     pub forgot_password_enabled: bool,
     pub remember_me_enabled: bool,
     pub magic_link_enabled: bool,
@@ -278,6 +280,7 @@ impl RealmSetting {
             id: Uuid::new_v7(timestamp),
             realm_id,
             default_signing_algorithm,
+            passwordless_enabled: false,
             forgot_password_enabled: false,
             remember_me_enabled: false,
             user_registration_enabled: false,

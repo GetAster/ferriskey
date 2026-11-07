@@ -29,7 +29,7 @@ pub struct ConfirmPasskeyResponse {
     path = "/me/passkeys",
     tag = "account",
     summary = "Finish registering a passkey",
-    description = "Answers the challenge issued by `POST /passkeys/options` and stores the resulting passkey on the caller's own account. Requires an elevation proved with a password, for the same reason as the challenge itself.",
+    description = "Answers the challenge issued by `POST /passkeys/options` and stores the resulting passkey on the caller's own account. Requires an elevation proved with a password or recent authentication in a passwordless realm, for the same reason as the challenge itself.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -42,7 +42,7 @@ pub struct ConfirmPasskeyResponse {
         (status = 200, description = "Passkey registered", body = ConfirmPasskeyResponse),
         (status = 400, description = "Invalid request data, or no live registration challenge to answer", body = ApiErrorResponse),
         (status = 401, description = "The challenge could not be verified, or the account is locked", body = ApiErrorResponse),
-        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password", body = ApiErrorResponse),
+        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password or recent authentication in a passwordless realm", body = ApiErrorResponse),
         (status = 404, description = "No such realm", body = ApiErrorResponse),
         (status = 500, description = "Internal server error", body = ApiErrorResponse),
     )

@@ -50,7 +50,7 @@ impl PartialSchema for PasskeyCreationOptionsResponse {
     path = "/me/passkeys/options",
     tag = "account",
     summary = "Start registering a passkey",
-    description = "Returns a WebAuthn creation challenge for the caller's own account, excluding the passkeys they already hold. The challenge is recorded server-side under a short TTL and answered by `POST /passkeys`. Requires an elevation proved with a password: a passkey is a primary sign-in means, so a second factor alone must not be able to add one.",
+    description = "Returns a WebAuthn creation challenge for the caller's own account, excluding the passkeys they already hold. The challenge is recorded server-side under a short TTL and answered by `POST /passkeys`. Requires an elevation proved with a password or recent authentication in a passwordless realm: a passkey is a primary sign-in means, so a second factor alone must not be able to add one.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -63,7 +63,7 @@ impl PartialSchema for PasskeyCreationOptionsResponse {
         (status = 200, description = "Challenge issued", body = PasskeyCreationOptionsResponse),
         (status = 400, description = "Invalid request data", body = ApiErrorResponse),
         (status = 401, description = "The account is locked or disabled", body = ApiErrorResponse),
-        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password", body = ApiErrorResponse),
+        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password or recent authentication in a passwordless realm", body = ApiErrorResponse),
         (status = 404, description = "No such realm", body = ApiErrorResponse),
         (status = 500, description = "Internal server error", body = ApiErrorResponse),
     )

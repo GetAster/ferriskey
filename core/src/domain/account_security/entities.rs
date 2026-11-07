@@ -8,6 +8,10 @@ use crate::domain::trident::ports::WebAuthnRpInfo;
 pub enum ElevationProof {
     Password(String),
     Otp(String),
+    /// Reuses a recent interactive authentication recorded in the caller session.
+    RecentAuthentication {
+        sso_cookie: String,
+    },
 }
 
 pub struct RequestElevationInput {

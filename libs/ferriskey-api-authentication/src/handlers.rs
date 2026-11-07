@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod authentificate;
 pub mod authorization_server_metadata;
+pub mod continue_login;
 pub mod device_authorization;
 pub mod device_verify;
 pub mod get_certs;

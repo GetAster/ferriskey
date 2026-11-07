@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
+use crate::domain::authentication::services::sso_token_hash;
 use ferriskey_domain::realm::scope::{RealmScope, Scoped, Unscoped};
 use ferriskey_domain::session::ports::UserSessionRepository;
 use ferriskey_domain::user::entities::User;
 use ferriskey_security::jwt::ports::{AccessTokenRepository, RefreshTokenRepository};
+use subtle::ConstantTimeEq;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -47,6 +49,37 @@ where
     R: RefreshTokenRepository,
     S: UserSessionRepository,
 {
+    async fn authenticated_at(
+        &self,
+        scope: &RealmScope,
+        user: &Scoped<User>,
+        session_id: Uuid,
+        sso_cookie: &str,
+    ) -> Result<Option<chrono::DateTime<chrono::Utc>>, CoreError> {
+        let Some(session) = self
+            .session_repository
+            .find_by_id(session_id)
+            .await
+            .map_err(|_| CoreError::InternalServerError)?
+        else {
+            return Ok(None);
+        };
+        let session = session.in_realm(scope)?;
+        let session = session.get();
+        if session.id != session_id || session.user_id != user.get().id || session.is_expired() {
+            return Ok(None);
+        }
+        let presented_hash = sso_token_hash(sso_cookie);
+        if sso_cookie.is_empty()
+            || !session.sso_token_hash.as_deref().is_some_and(|stored| {
+                bool::from(stored.as_bytes().ct_eq(presented_hash.as_bytes()))
+            })
+        {
+            return Ok(None);
+        }
+        Ok(Some(session.authenticated_at))
+    }
+
     async fn revoke_all_sessions_except(
         &self,
         scope: &RealmScope,
@@ -392,5 +425,75 @@ mod tests {
             .await;
 
         assert!(matches!(refused, Err(CoreError::NotFound)));
+    }
+    #[tokio::test]
+    async fn recent_authentication_reads_only_the_live_bound_session() {
+        for case in [
+            "valid",
+            "missing",
+            "wrong_user",
+            "wrong_realm",
+            "wrong_session",
+            "expired",
+            "missing_cookie",
+            "wrong_cookie",
+            "missing_hash",
+        ] {
+            let uid = Uuid::now_v7();
+            let rid = Uuid::now_v7();
+            let scope = scope_of(rid);
+            let user = scoped_user(uid, rid, &scope);
+            let mut stored = session(uid, rid);
+            stored.sso_token_hash = Some(sso_token_hash("browser-session-secret"));
+            let wanted = stored.id;
+            let authenticated = stored.authenticated_at;
+            match case {
+                "missing_hash" => stored.sso_token_hash = None,
+                "wrong_user" => stored.user_id = Uuid::now_v7(),
+                "wrong_realm" => stored.realm_id = Uuid::now_v7(),
+                "wrong_session" => stored.id = Uuid::now_v7(),
+                "expired" => stored.expires_at = Utc::now() - Duration::seconds(1),
+                _ => {}
+            }
+            let mut sessions = MockUserSessionRepository::new();
+            sessions
+                .expect_find_by_id()
+                .withf(move |sid| *sid == wanted)
+                .returning(move |_| {
+                    let stored = stored.clone();
+                    Box::pin(async move {
+                        Ok(if case == "missing" {
+                            None
+                        } else {
+                            Some(Unscoped::new(stored))
+                        })
+                    })
+                });
+            let adapter = OtherSessionsRevocationAdapter::new(
+                Arc::new(MockAccessTokenRepository::new()),
+                Arc::new(MockRefreshTokenRepository::new()),
+                Arc::new(sessions),
+            );
+            let result = adapter
+                .authenticated_at(
+                    &scope,
+                    &user,
+                    wanted,
+                    match case {
+                        "missing_cookie" => "",
+                        "wrong_cookie" => "wrong",
+                        _ => "browser-session-secret",
+                    },
+                )
+                .await;
+            if case == "valid" {
+                assert_eq!(result.unwrap(), Some(authenticated));
+            } else {
+                assert!(
+                    result.is_err() || result.unwrap().is_none(),
+                    "accepted {case}"
+                );
+            }
+        }
     }
 }

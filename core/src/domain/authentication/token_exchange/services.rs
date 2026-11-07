@@ -215,6 +215,22 @@ where
             return Err(TokenExchangeError::InvalidRequest);
         }
 
+        let settings = self
+            .realm_repository
+            .get_realm_settings(realm.id())
+            .await
+            .map_err(|_| TokenExchangeError::ServerError("could not load realm policy".into()))?
+            .ok_or_else(|| TokenExchangeError::ServerError("missing realm policy".into()))?;
+        if settings.passwordless_enabled
+            && user.client_id.is_none()
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(TokenExchangeError::InvalidRequest);
+        }
         Ok((claims, user))
     }
 

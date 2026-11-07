@@ -1,11 +1,15 @@
 use axum::{
     extract::{Path, Query, State},
+    http::header,
     response::IntoResponse,
 };
 use axum_cookie::CookieManager;
+use ferriskey_api_core::login_step::login_action_cookie;
+use ferriskey_core::domain::authentication::ports::AuthService;
 use ferriskey_core::domain::trident::ports::{
     PasskeyAuthenticateInput, PublicKeyCredential, TridentService,
 };
+use ferriskey_core::domain::user::entities::RequiredAction;
 use serde::{Deserialize, Serialize};
 use utoipa::{
     PartialSchema, ToSchema,
@@ -55,6 +59,8 @@ impl PartialSchema for PasskeyAuthenticateRequest {
 pub struct PasskeyAuthenticateResponse {
     login_url: String,
     status: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    required_actions: Vec<RequiredAction>,
 }
 
 /// The body is the browser's assertion as is, so options travel in the query.
@@ -105,7 +111,7 @@ pub async fn passkey_authenticate(
     let output = state
         .service
         .passkey_authenticate(PasskeyAuthenticateInput {
-            realm_name,
+            realm_name: realm_name.clone(),
             session_code,
             webapp_base_url: webapp_url.clone(),
             rp_info,
@@ -115,11 +121,44 @@ pub async fn passkey_authenticate(
         .await
         .map_err(ApiError::from)?;
 
+    let pending = output.login_url.is_empty();
+    let mut headers = sso_cookie::headers(output.sso_session, base_url.starts_with("https"))?;
+    if pending {
+        let token = state
+            .service
+            .issue_primary_login_action_token(
+                realm_name.clone(),
+                output.session_code,
+                output.user_id,
+                format!(
+                    "{}{}",
+                    base_url.trim_end_matches('/'),
+                    state.args.server.root_path
+                ),
+                true,
+            )
+            .await?;
+        headers.append(
+            header::SET_COOKIE,
+            login_action_cookie(
+                token,
+                &state.args.server.root_path,
+                &realm_name,
+                base_url.starts_with("https"),
+            )?,
+        );
+    }
     Ok((
-        sso_cookie::headers(output.sso_session, base_url.starts_with("https"))?,
+        headers,
         Response::OK(PasskeyAuthenticateResponse {
             login_url: output.login_url,
-            status: "Success".to_string(),
+            status: if pending {
+                "RequiresActions"
+            } else {
+                "Success"
+            }
+            .to_string(),
+            required_actions: output.pending_actions,
         }),
     ))
 }
