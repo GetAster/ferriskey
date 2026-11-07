@@ -17,10 +17,12 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-1` on `upgrade/ferriskey-v0.10.2`, cut from the upstream tag `v0.10.2` (`15a1148a`). By owner decision (2026-11-05) this tag was created before `aster-idp` had tests to run against it. Its images (`api` and `webapp` targets of the Dockerfile) are built but not yet published to a registry, so the table lists their image IDs; the registry digests replace them once published.
+`aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. This release adds the embedded application builder, trusted issuance, atomic service-account provisioning and public host API exports. Before tagging, aster-idp `d737911` passed 151 tests and both explicit PostgreSQL smoke tests against this exact revision; default and no-default builds passed. The embedded host consumes the pinned Rust crate. No new container images have been built or deployed for this tag.
 
+The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
+| `aster-ferriskey-v0.10.2-2` | `4e3781da` | Not built or deployed; embedded Rust crate release. |
 | `aster-ferriskey-v0.10.2-1` | `2508c406` | Not published. Image IDs: api `sha256:66ea5e2ea364e8fe7ab03e61c06a4c64c94e7dded46eb66c726a51d61441e7c5`, webapp `sha256:25d43e942ccb8b6becfcfcc326da79f9aeb92fa4414c9176b13d0bcfe2521b89` |
 
 ## Patches
@@ -40,6 +42,6 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 | 9 | `feat/host-api-exports-v0.10.2` | Re-export the existing AuthService trait and CoreError from ferriskey-api so embedded hosts can fetch realm keys and handle errors without a direct core dependency. No behavior changes. Based on row 8 topic `660941c7`; topic `2a511e1d`, integrated `4e3781da`. | Not submitted. |
 
-The local patched line now contains rows 6–9 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. These commits are not a new release tag or deployment. Validation: real PostgreSQL builder and issuance tests, lifecycle cancellation tests, and token-exchange regressions; the aster-idp Salvo integration proof is recorded in the internal embedding plan.
+The published patched line contains rows 6–9 at `4e3781da9f311b7352b735f7df82bdb8af6e7808`. These commits are included in release tag `aster-ferriskey-v0.10.2-2`; no deployment has been performed. Validation: real PostgreSQL builder and issuance tests, lifecycle cancellation tests, and token-exchange regressions; the aster-idp Salvo integration proof is recorded in the internal embedding plan.
 
 Planned patches are not listed here until they land.
