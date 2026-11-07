@@ -30,7 +30,7 @@ pub struct StartOtpEnrollmentResponse {
     path = "/me/mfa/otp",
     tag = "account",
     summary = "Start enrolling an authenticator",
-    description = "Generates a TOTP secret, records it server-side under a short TTL, and returns it with its otpauth URI so the caller can scan it. The secret is never taken back from the caller: `PUT /mfa/otp` reads it from this side of the wire. Requires an elevation proved with a password, refused here rather than at the confirm so the caller is not sent to scan a code they will not be allowed to submit.",
+    description = "Generates a TOTP secret, records it server-side under a short TTL, and returns it with its otpauth URI so the caller can scan it. The secret is never taken back from the caller: `PUT /mfa/otp` reads it from this side of the wire. Requires an elevation proved with a password or recent authentication in a passwordless realm, refused here rather than at the confirm so the caller is not sent to scan a code they will not be allowed to submit.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),
@@ -43,7 +43,7 @@ pub struct StartOtpEnrollmentResponse {
         (status = 200, description = "Enrolment started", body = StartOtpEnrollmentResponse),
         (status = 400, description = "Invalid request data", body = ApiErrorResponse),
         (status = 401, description = "The account is locked or disabled", body = ApiErrorResponse),
-        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password", body = ApiErrorResponse),
+        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password or recent authentication in a passwordless realm", body = ApiErrorResponse),
         (status = 404, description = "No such realm", body = ApiErrorResponse),
         (status = 500, description = "Internal server error", body = ApiErrorResponse),
     )

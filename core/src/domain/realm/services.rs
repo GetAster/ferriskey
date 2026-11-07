@@ -850,6 +850,7 @@ where
                 scope.id(),
                 input.algorithm,
                 input.user_registration_enabled,
+                input.passwordless_enabled,
                 input.forgot_password_enabled,
                 input.remember_me_enabled,
                 input.magic_link_enabled,

@@ -2556,10 +2556,23 @@ where
             .await
             .map_err(|_| CoreError::InternalServerError)?;
 
-        let realm_settings = self.realm_settings_of(scope).await.ok();
+        let realm_settings = Some(self.realm_settings_of(scope).await?);
 
+        let mut actions = user.required_actions.clone();
+        if realm_settings
+            .as_deref()
+            .is_some_and(|s| s.passwordless_enabled)
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+            && !actions.contains(&RequiredAction::VerifyEmail)
+        {
+            actions.push(RequiredAction::VerifyEmail);
+        }
         let pending_step = mfa_policy::pending_auth_step(
-            &user.required_actions,
+            &actions,
             realm_settings.as_deref(),
             &user_roles,
             credentials
@@ -3127,8 +3140,13 @@ where
         password: &str,
     ) -> Result<VerifiedLogin<'c>, CoreError> {
         let realm_id = scope.id();
-        let settings = self.realm_settings_of(scope).await.ok();
-        let settings = settings.as_deref();
+        let settings = self.realm_settings_of(scope).await?;
+        if settings.passwordless_enabled {
+            return Err(CoreError::Forbidden(
+                "Local password authentication is disabled".into(),
+            ));
+        }
+        let settings = Some(settings.as_ref());
         let login_aliases = settings
             .map(|settings| settings.login_aliases.clone())
             .unwrap_or_default();
@@ -3285,6 +3303,18 @@ where
         auth_session: &AuthSession,
         base_url: &str,
     ) -> Result<String, CoreError> {
+        self.issue_step_token_with_factor(scope, context, auth_session, base_url, false)
+            .await
+    }
+
+    async fn issue_step_token_with_factor(
+        &self,
+        scope: &RealmScope,
+        context: &LoginContext<'_>,
+        auth_session: &AuthSession,
+        base_url: &str,
+        second_factor_verified: bool,
+    ) -> Result<String, CoreError> {
         let settings = self.realm_settings_of(scope).await.ok();
         let temporary_lifetime = temporary_token_lifetime(settings.as_deref());
         let user = &context.user;
@@ -3305,6 +3335,13 @@ where
             LOGIN_ACTION_SESSION_CLAIM.to_string(),
             serde_json::Value::String(auth_session.id.to_string()),
         );
+
+        if second_factor_verified {
+            jwt_claim.additional_claims.insert(
+                LOGIN_ACTION_SECOND_FACTOR_CLAIM.to_string(),
+                serde_json::Value::Bool(true),
+            );
+        }
 
         self.login_action_token_repository
             .create(LoginActionToken {
@@ -3561,6 +3598,19 @@ where
                 .await);
         }
 
+        if settings.passwordless_enabled
+            && user.client_id.is_none()
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::InvalidGrant(
+                "Verified contact email is required".into(),
+            ));
+        }
+
         let client_scopes = self
             .scope_mapping_repository
             .get_scope_set(client.id)
@@ -3674,6 +3724,19 @@ where
         }
 
         let lifetimes = TokenLifetimes::resolve(&settings, &client);
+
+        if settings.passwordless_enabled
+            && user.client_id.is_none()
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::InvalidGrant(
+                "Verified contact email is required".into(),
+            ));
+        }
 
         let client_scopes = self
             .scope_mapping_repository
@@ -4454,8 +4517,20 @@ where
             .iter()
             .any(|cred| cred.credential_type == CredentialType::Otp);
 
+        let mut actions = user.required_actions.clone();
+        if realm_settings
+            .as_ref()
+            .is_some_and(|settings| settings.passwordless_enabled)
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            actions.push(RequiredAction::VerifyEmail);
+        }
         let required_actions = resolve_refresh_required_actions(
-            &user.required_actions,
+            &actions,
             realm_settings.as_ref(),
             &user_roles,
             has_otp_credential,
@@ -4789,6 +4864,56 @@ where
 
         self.enforce_maintenance_mode(input.scope.id(), &client, user.id, &user.username)
             .await?;
+
+        if !user.enabled || user.is_locked(Utc::now()) {
+            return Err(CoreError::InvalidCredentials);
+        }
+        if input.primary_authentication {
+            // A provider proves the primary identity, not the local OTP. Match
+            // browser password login: answer an enrolled OTP before other steps.
+            let credentials = self
+                .credential_repository
+                .get_credentials_by_user_id(user.id)
+                .await
+                .map_err(|_| CoreError::GetUserCredentialsError)?;
+            if credentials
+                .iter()
+                .any(|credential| credential.credential_type == CredentialType::Otp)
+            {
+                return Ok(LoginAdmission::ActionsRequired {
+                    required_actions: Vec::new(),
+                    second_factor_pending: true,
+                });
+            }
+
+            let (pending, _) = self.resolve_pending_auth_step(&user, &input.scope).await?;
+            if let Some(step) = pending {
+                let (required_actions, second_factor_pending) = match step {
+                    PendingAuthStep::RequiredActions(actions) => (actions, false),
+                    PendingAuthStep::OtpChallenge => (Vec::new(), true),
+                };
+                return Ok(LoginAdmission::ActionsRequired {
+                    required_actions,
+                    second_factor_pending,
+                });
+            }
+        }
+
+        // Re-check the contact invariant even after a local step. A profile
+        // change must not turn a previously admitted proof into normal access.
+        let settings = self.realm_settings_of(&input.scope).await?;
+        if settings.passwordless_enabled
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Ok(LoginAdmission::ActionsRequired {
+                required_actions: vec![RequiredAction::VerifyEmail],
+                second_factor_pending: false,
+            });
+        }
 
         let consent = self
             .consent_gate(
@@ -5349,6 +5474,58 @@ where
         })
     }
 
+    async fn issue_primary_login_action_token(
+        &self,
+        realm_name: String,
+        session_code: Uuid,
+        user_id: Uuid,
+        base_url: String,
+        second_factor_verified: bool,
+    ) -> Result<String, CoreError> {
+        let scope = RealmScope::resolve(self.realm_repository.as_ref(), &realm_name).await?;
+        let session = self
+            .auth_session_repository
+            .get_by_session_code(session_code)
+            .await?
+            .in_realm(&scope)?
+            .into_inner();
+        if session.expires_at <= Utc::now()
+            || session.authenticated
+            || session.user_id.is_some_and(|id| id != user_id)
+        {
+            return Err(CoreError::InvalidSession);
+        }
+        let user = self
+            .user_repository
+            .get_by_id(user_id)
+            .await?
+            .in_realm(&scope)?
+            .into_inner();
+        if !user.enabled || user.is_locked(Utc::now()) {
+            return Err(CoreError::InvalidCredentials);
+        }
+        let client = self
+            .client_repository
+            .get_by_id(scope.id(), session.client_id)
+            .await?
+            .in_realm(&scope)?
+            .into_inner();
+        let context = LoginContext {
+            client: &client,
+            user,
+            federated_by: None,
+            credentials: vec![],
+        };
+        self.issue_step_token_with_factor(
+            &scope,
+            &context,
+            &session,
+            &base_url,
+            second_factor_verified,
+        )
+        .await
+    }
+
     async fn issue_follow_up_login_action_token(
         &self,
         previous: JwtClaim,
@@ -5486,6 +5663,16 @@ where
 
         let scope = RealmScope::resolve(self.realm_repository.as_ref(), &input.realm_name).await?;
         let realm = scope.realm().clone();
+
+        let settings = self.realm_settings_of(&scope).await?;
+        if !settings.user_registration_enabled {
+            return Err(CoreError::Forbidden("Registration is disabled".into()));
+        }
+        if settings.passwordless_enabled {
+            return Err(CoreError::Forbidden(
+                "Use email-link registration for this realm".into(),
+            ));
+        }
 
         let firstname = input.first_name;
         let lastname = input.last_name;

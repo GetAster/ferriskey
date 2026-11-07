@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-    sea_query::Expr,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    DbBackend, EntityTrait, QueryFilter, Statement, TransactionTrait, sea_query::Expr,
 };
 use tracing::error;
 use uuid::Uuid;
@@ -43,6 +43,7 @@ impl From<EvtModel> for EmailVerificationToken {
             user_id: model.user_id,
             realm_id: model.realm_id,
             token_hash: model.token_hash,
+            email: model.email,
             created_at,
             expires_at,
             used_at,
@@ -61,6 +62,7 @@ impl EmailVerificationTokenRepository for PostgresEmailVerificationTokenReposito
             user_id: Set(input.user_id),
             realm_id: Set(input.realm_id),
             token_hash: Set(input.token_hash),
+            email: Set(Some(input.email)),
             expires_at: Set(input.expires_at.fixed_offset()),
             created_at: Set(Utc::now().fixed_offset()),
             used_at: Set(None),
@@ -111,6 +113,43 @@ impl EmailVerificationTokenRepository for PostgresEmailVerificationTokenReposito
             })?;
 
         Ok(model.map(|model| Unscoped::new(EmailVerificationToken::from(model))))
+    }
+
+    async fn consume_and_verify(
+        &self,
+        token: &Scoped<EmailVerificationToken>,
+    ) -> Result<bool, CoreError> {
+        let record = token.get();
+        let Some(email) = record
+            .email
+            .as_deref()
+            .filter(|email| !email.trim().is_empty())
+        else {
+            return Ok(false);
+        };
+        let tx = self
+            .db
+            .begin()
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        let consumed = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
+            "UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1 AND realm_id = $2 AND user_id = $3 AND email = $4 AND token_hash = $5 AND used_at IS NULL AND expires_at > NOW()",
+            [record.id.into(), record.realm_id.into(), record.user_id.into(), email.into(), record.token_hash.clone().into()]
+        )).await.map_err(|_| CoreError::InternalServerError)?;
+        if consumed.rows_affected() != 1 {
+            return Ok(false);
+        }
+        let verified = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
+            "UPDATE users SET email_verified = true WHERE id = $1 AND realm_id = $2 AND email = $3 AND enabled = true",
+            [record.user_id.into(), record.realm_id.into(), email.into()]
+        )).await.map_err(|_| CoreError::InternalServerError)?;
+        if verified.rows_affected() != 1 {
+            return Ok(false);
+        }
+        tx.commit()
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        Ok(true)
     }
 
     async fn mark_used(&self, token: &Scoped<EmailVerificationToken>) -> Result<(), CoreError> {

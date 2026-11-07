@@ -45,6 +45,7 @@ pub struct UpdateRealmSettingValidator {
     pub default_signing_algorithm: Option<String>,
 
     pub user_registration_enabled: Option<bool>,
+    pub passwordless_enabled: Option<bool>,
     pub forgot_password_enabled: Option<bool>,
     pub remember_me_enabled: Option<bool>,
     pub magic_link_enabled: Option<bool>,

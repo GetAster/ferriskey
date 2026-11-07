@@ -6,7 +6,7 @@ use crate::ports::{
     PortalThemeRepository, PortalThemeService, UpdateThemeInput, UpdateThemeMetadataInput,
     UpdateThemePageInput,
 };
-use crate::validation::{validate_pages, validate_tree};
+use crate::validation::{validate_pages_with_settings, validate_tree_with_settings};
 use ferriskey_authz::FerriskeyPolicy;
 use ferriskey_domain::auth::Identity;
 use ferriskey_domain::client::ports::ClientRepository;
@@ -210,7 +210,12 @@ where
             .map(|t| t.id == input.theme_id)
             .unwrap_or(false)
         {
-            validate_tree(input.page_type, &input.tree).map_err(|missing| {
+            validate_tree_with_settings(
+                input.page_type,
+                &input.tree,
+                scope.realm().settings.as_ref(),
+            )
+            .map_err(|missing| {
                 CoreError::PortalThemePageInvalid(
                     serde_json::to_string(&missing).unwrap_or_else(|_| "{}".to_string()),
                 )
@@ -251,7 +256,11 @@ where
             .in_realm(&scope)?
             .ok_or(CoreError::NotFound)?;
 
-        validate_pages(|pt| theme.get().pages.get(pt).clone()).map_err(|missing| {
+        validate_pages_with_settings(
+            |pt| theme.get().pages.get(pt).clone(),
+            scope.realm().settings.as_ref(),
+        )
+        .map_err(|missing| {
             CoreError::PortalThemeInvalidForActivation(
                 serde_json::to_string(&missing).unwrap_or_else(|_| "[]".to_string()),
             )

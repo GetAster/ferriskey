@@ -452,12 +452,22 @@ where
             .get_realm_settings(user.realm_id)
             .await?;
 
-        let persisted_actions = user
+        let needs_verified_email = settings.as_ref().is_some_and(|s| s.passwordless_enabled)
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()));
+        let mut persisted_actions = user
             .required_actions
             .into_iter()
             .filter(|action| !actions_satisfied_by_path.contains(action))
             .collect::<Vec<RequiredAction>>();
 
+        if needs_verified_email {
+            // Verify contact before enrolling credentials or other account setup.
+            persisted_actions = vec![RequiredAction::VerifyEmail];
+        }
         Ok(pending_auth_step(
             &persisted_actions,
             settings.as_ref(),
@@ -607,6 +617,7 @@ where
         let admission = self
             .admission
             .admit(AdmitLoginInput {
+                primary_authentication: false,
                 user_id,
                 auth_session: auth_session.clone(),
                 scope: scope.clone(),
@@ -614,8 +625,16 @@ where
             })
             .await?;
 
-        if let LoginAdmission::ConsentRequired { redirect_url } = admission {
-            return Ok(LoginFinish::ConsentRequired { redirect_url });
+        match admission {
+            LoginAdmission::ConsentRequired { redirect_url } => {
+                return Ok(LoginFinish::ConsentRequired { redirect_url });
+            }
+            LoginAdmission::ActionsRequired { .. } => {
+                return Err(CoreError::Forbidden(
+                    "An authentication step is still due".into(),
+                ));
+            }
+            LoginAdmission::Proceed => {}
         }
 
         let sso_session = self
@@ -775,6 +794,54 @@ where
     EL: ElevationRepository,
     ADM: LoginAdmissionPort,
 {
+    async fn continue_login(
+        &self,
+        identity: Identity,
+        realm_name: String,
+        session_code: String,
+        webapp_base_url: String,
+        second_factor_verified: bool,
+    ) -> Result<LoginProgress, CoreError> {
+        let Identity::User(user) = identity else {
+            return Err(CoreError::InvalidCredentials);
+        };
+        let scope = RealmScope::resolve(self.realm_repository.as_ref(), &realm_name).await?;
+        let user = self
+            .user_repository
+            .get_by_id(user.id)
+            .await?
+            .in_realm(&scope)?
+            .into_inner();
+        if !user.enabled || user.is_locked(Utc::now()) {
+            return Err(CoreError::InvalidCredentials);
+        }
+        let session = self
+            .auth_session_repository
+            .get_by_session_code(
+                Uuid::parse_str(&session_code).map_err(|_| CoreError::InvalidSession)?,
+            )
+            .await?
+            .in_realm(&scope)?
+            .into_inner();
+        if session.expires_at <= Utc::now()
+            || session.authenticated
+            || session.user_id.is_some_and(|id| id != user.id)
+        {
+            return Err(CoreError::InvalidSession);
+        }
+        self.progress_login(
+            LoginStep {
+                session_code: &session_code,
+                webapp_base_url: &webapp_base_url,
+                second_factor_verified,
+            },
+            user.id,
+            &scope,
+            &[],
+        )
+        .await
+    }
+
     async fn generate_recovery_code(
         &self,
         identity: Identity,
@@ -995,6 +1062,23 @@ where
             _ => return Err(CoreError::Forbidden("is not user".to_string())),
         };
 
+        let settings = self
+            .realm_repository
+            .get_realm_settings(user.realm_id)
+            .await?
+            .ok_or(CoreError::InvalidRealm)?;
+        if settings.passwordless_enabled
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::Forbidden(
+                "Verify contact email before enrolling a passkey".into(),
+            ));
+        }
+
         let session_code =
             Uuid::parse_str(&input.session_code).map_err(|_| CoreError::SessionCreateError)?;
 
@@ -1069,6 +1153,23 @@ where
             Identity::User(user) => user,
             _ => return Err(CoreError::Forbidden("is not user".to_string())),
         };
+
+        let settings = self
+            .realm_repository
+            .get_realm_settings(user.realm_id)
+            .await?
+            .ok_or(CoreError::InvalidRealm)?;
+        if settings.passwordless_enabled
+            && (!user.email_verified
+                || user
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::Forbidden(
+                "Verify contact email before enrolling a passkey".into(),
+            ));
+        }
 
         // Same reasoning as `verify_otp`: this route is reachable with a temporary token
         // obtained from the password alone, so enrolling a passkey must be something the
@@ -1490,14 +1591,14 @@ where
             .pending_auth_step_for(user.get().id, &scope, &[])
             .await?
         {
-            warn!(
-                user_id = %user.get().id,
-                ?actions,
-                "refusing to complete a passkey login while a required action is due"
-            );
-            return Err(CoreError::Forbidden(
-                "an authentication step is still due for this user".to_string(),
-            ));
+            return Ok(PasskeyAuthenticateOutput {
+                pending_actions: actions,
+                user_id: user.get().id,
+                session_code: auth_session.id,
+                second_factor_verified: true,
+                login_url: String::new(),
+                sso_session: None,
+            });
         }
 
         let (login_url, sso_session) = self
@@ -1506,6 +1607,10 @@ where
             .into_parts();
 
         Ok(PasskeyAuthenticateOutput {
+            pending_actions: vec![],
+            user_id: user.get().id,
+            session_code: auth_session.id,
+            second_factor_verified: true,
             login_url,
             sso_session,
         })
@@ -1679,6 +1784,9 @@ where
         }
 
         let scope = RealmScope::resolve(self.realm_repository.as_ref(), &input.realm_name).await?;
+        if scope.settings().is_some_and(|s| s.passwordless_enabled) {
+            return Err(CoreError::Forbidden("Local passwords are disabled".into()));
+        }
 
         let scoped_user = self
             .user_repository
@@ -1922,21 +2030,58 @@ where
             return Err(CoreError::MagicLinkNotEnabled);
         }
 
+        let signup_session = if settings.passwordless_enabled {
+            let code = input
+                .session_code
+                .as_deref()
+                .and_then(|s| Uuid::parse_str(s).ok())
+                .ok_or(CoreError::InvalidSession)?;
+            let session = self
+                .auth_session_repository
+                .get_by_session_code(code)
+                .await?
+                .in_realm(&scope)?
+                .into_inner();
+            if session.expires_at <= Utc::now() || session.authenticated {
+                return Err(CoreError::InvalidSession);
+            }
+            Some(code)
+        } else {
+            None
+        };
+        let normalized_email =
+            crate::domain::authentication::services::normalize_login_email(&input.email);
         let user = match self
             .user_repository
-            .get_by_email(&input.email, realm.id)
+            .get_by_email(&normalized_email, realm.id)
             .await
         {
             Ok(Some(user)) => user,
-            Ok(None) => {
-                warn!("User not found for magic link generation");
-                return Ok(());
+            Ok(None) if settings.passwordless_enabled && settings.user_registration_enabled => {
+                self.user_repository
+                    .create_user(crate::domain::user::value_objects::CreateUserRequest {
+                        id: None,
+                        realm_id: realm.id,
+                        client_id: None,
+                        username: normalized_email.clone(),
+                        email: Some(normalized_email),
+                        firstname: None,
+                        lastname: None,
+                        email_verified: false,
+                        enabled: true,
+                    })
+                    .await?
             }
+            Ok(None) => return Ok(()),
             Err(e) => {
                 error!("Failed to look up user during magic link generation: {}", e);
                 return Ok(()); // Valid on purpose to avoid leaking email existence
             }
         };
+        if !user.enabled || user.is_locked(Utc::now()) {
+            return Ok(());
+        }
+        let _ = signup_session;
         self.magic_link_repository
             .cleanup_expired(realm.id.into())
             .await?;
@@ -1980,6 +2125,7 @@ where
                 &magic_token_hash,
                 expires_at,
                 auth_session_code,
+                user.email.clone().ok_or(CoreError::InvalidRequest)?,
             )
             .await?;
 
@@ -2208,31 +2354,77 @@ where
             return Err(CoreError::InvalidMagicLink);
         }
 
-        // Generate authorization code and login URL
-        let (login_url, sso_session) = self
-            .store_auth_code_and_generate_login_url(
-                &auth_session,
-                magic_link.user_id,
-                &scope,
-                &[RequiredAction::VerifyEmail],
-                &input.webapp_base_url,
-            )
-            .await
-            .inspect_err(|e| error!("Failed to generate login URL: {}", e))?
-            .into_parts();
-
-        // TODO: here an email should be sent to the user instead of logging it
-        debug!("Magic link verified for user_id: {}", magic_link.user_id);
-        // Delete the used magic link
-        let _ = self
+        if auth_session.expires_at <= Utc::now() || auth_session.authenticated {
+            return Err(CoreError::InvalidSession);
+        }
+        // Consume once before issuing any continuation or authorization code. The
+        // repository verifies the email captured at send time, never a changed address.
+        if !self
             .magic_link_repository
-            .delete_by_token_id(magic_link.magic_token_id)
+            .consume(magic_link.magic_token_id)
+            .await?
+        {
+            return Err(CoreError::InvalidMagicLink);
+        }
+        match self
+            .user_required_action_repository
+            .remove_required_action(magic_link.user_id, RequiredAction::VerifyEmail)
             .await
-            .inspect_err(|e| warn!("Failed to delete used magic link: {}", e));
+        {
+            Ok(()) | Err(RequiredActionError::NotFound) => {}
+            Err(_) => return Err(CoreError::InternalServerError),
+        }
+        let pending = self
+            .pending_auth_step_for(magic_link.user_id, &scope, &[RequiredAction::VerifyEmail])
+            .await?;
+        let needs_otp = self
+            .credential_repository
+            .get_credentials_by_user_id(magic_link.user_id)
+            .await
+            .map_err(|_| CoreError::GetUserCredentialsError)?
+            .iter()
+            .any(|credential| credential.credential_type == CredentialType::Otp);
+        if needs_otp {
+            return Ok(VerifyMagicLinkOutput {
+                pending_actions: vec![],
+                user_id: magic_link.user_id,
+                session_code,
+                second_factor_verified: false,
+                login_url: String::new(),
+                sso_session: None,
+            });
+        }
 
+        let pending_actions = match pending {
+            Some(PendingAuthStep::RequiredActions(actions)) => actions,
+            Some(PendingAuthStep::OtpChallenge) => vec![],
+            None => {
+                let (login_url, sso_session) = self
+                    .complete_login(
+                        &auth_session,
+                        magic_link.user_id,
+                        &scope,
+                        &input.webapp_base_url,
+                    )
+                    .await?
+                    .into_parts();
+                return Ok(VerifyMagicLinkOutput {
+                    pending_actions: vec![],
+                    user_id: magic_link.user_id,
+                    session_code,
+                    second_factor_verified: false,
+                    login_url,
+                    sso_session,
+                });
+            }
+        };
         Ok(VerifyMagicLinkOutput {
-            login_url,
-            sso_session,
+            pending_actions,
+            user_id: magic_link.user_id,
+            session_code,
+            second_factor_verified: false,
+            login_url: String::new(),
+            sso_session: None,
         })
     }
 
@@ -2250,7 +2442,7 @@ where
             .map_err(|_| CoreError::InternalServerError)?
             .ok_or(CoreError::NotFound)?;
 
-        if !settings.forgot_password_enabled {
+        if settings.passwordless_enabled || !settings.forgot_password_enabled {
             return Err(CoreError::Forbidden(
                 "Password reset is not enabled for this realm".to_string(),
             ));
@@ -2521,6 +2713,14 @@ where
                 .await?
                 .ok_or(CoreError::InvalidRealm)?,
         );
+        let settings = self
+            .realm_repository
+            .get_realm_settings(scope.id())
+            .await?
+            .ok_or(CoreError::InvalidRealm)?;
+        if settings.passwordless_enabled {
+            return Err(CoreError::Forbidden("Local passwords are disabled".into()));
+        }
 
         // Look up user context for the common-password check (username/email match).
         let target_user = self
@@ -3025,7 +3225,9 @@ mod tests {
             .unwrap()
             .expect_create_magic_link()
             .times(1)
-            .returning(|_, _, _, _, _, _| Box::pin(async { Err(CoreError::InternalServerError) }));
+            .returning(|_, _, _, _, _, _, _| {
+                Box::pin(async { Err(CoreError::InternalServerError) })
+            });
 
         let _ = builder
             .build()
@@ -3829,6 +4031,14 @@ mod tests {
         let prt_user_id = prt.user_id;
 
         let resolved = realm.clone();
+        let settings_realm_id = realm.id;
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                Box::pin(async move { Ok(Some(RealmSetting::new(settings_realm_id, None))) })
+            });
+
         Arc::get_mut(&mut builder.realm_repo)
             .unwrap()
             .expect_get_by_id()
@@ -4836,6 +5046,14 @@ mod tests {
         let realm = create_test_realm_with_name("test-realm");
         let user = create_test_user_with_email(&realm, "victim@example.com");
 
+        let settings_realm_id = realm.id;
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                Box::pin(async move { Ok(Some(RealmSetting::new(settings_realm_id, None))) })
+            });
+
         Arc::get_mut(&mut builder.user_required_action_repo)
             .unwrap()
             .expect_get_required_actions()
@@ -4864,6 +5082,14 @@ mod tests {
         let realm = create_test_realm_with_name("test-realm");
         let user = create_test_user_with_email(&realm, "user@example.com");
         let session_code = Uuid::new_v4();
+
+        let settings_realm_id = realm.id;
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                Box::pin(async move { Ok(Some(RealmSetting::new(settings_realm_id, None))) })
+            });
 
         Arc::get_mut(&mut builder.user_required_action_repo)
             .unwrap()
@@ -5066,6 +5292,15 @@ mod tests {
             .expect_verify_magic_token()
             .returning(|_, _| Box::pin(async { Ok(true) }));
 
+        Arc::get_mut(&mut builder.magic_link_repo)
+            .unwrap()
+            .expect_consume()
+            .returning(|_| Box::pin(async { Ok(true) }));
+        Arc::get_mut(&mut builder.user_required_action_repo)
+            .unwrap()
+            .expect_remove_required_action()
+            .returning(|_, _| Box::pin(async { Ok(()) }));
+
         MagicLinkFixture {
             builder,
             token_id,
@@ -5105,8 +5340,8 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(CoreError::Forbidden(_))),
-            "a magic link must not log in a user who still owes ConfigureOtp: {result:?}"
+            matches!(result, Ok(ref out) if out.login_url.is_empty() && out.pending_actions.contains(&RequiredAction::ConfigureOtp)),
+            "a magic link must continue setup without issuing a code: {result:?}"
         );
     }
 
@@ -5142,7 +5377,7 @@ mod tests {
             .await;
 
         assert!(
-            matches!(result, Err(CoreError::Forbidden(_))),
+            matches!(result, Ok(ref out) if out.login_url.is_empty()),
             "an OTP credential still demands a challenge before any code is minted: {result:?}"
         );
     }
@@ -6109,8 +6344,8 @@ mod tests {
         let result = passkey_login_of(&realm, owner, Vec::new(), false).await;
 
         assert!(
-            matches!(result, Err(CoreError::Forbidden(_))),
-            "a passkey must not skip a required action"
+            matches!(result, Ok(ref out) if out.login_url.is_empty() && out.pending_actions.contains(&RequiredAction::UpdatePassword)),
+            "a passkey must continue required actions without a code"
         );
     }
 
@@ -6332,6 +6567,14 @@ mod tests {
         let mut builder = TridentTestBuilder::new();
 
         let owning = owner_realm.clone();
+        let settings_realm_id = owner_realm.id;
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .returning(move |_| {
+                Box::pin(async move { Ok(Some(RealmSetting::new(settings_realm_id, None))) })
+            });
+
         Arc::get_mut(&mut builder.realm_repo)
             .unwrap()
             .expect_get_by_id()
@@ -6658,6 +6901,127 @@ mod tests {
                 "no code may be minted on a session this browser does not hold"
             );
             assert!(output.sso_session.is_none());
+        }
+    }
+    #[tokio::test]
+    async fn passwordless_reset_uses_explicit_settings_and_never_writes_a_password() {
+        let realm = create_test_realm_with_name("passwordless");
+        assert!(
+            realm.settings.is_none(),
+            "get_by_id returns an unhydrated realm"
+        );
+        let rid = realm.id;
+        let token_id = Uuid::new_v4();
+        let token = PasswordResetToken {
+            id: Uuid::new_v4(),
+            user_id: Uuid::new_v4(),
+            realm_id: rid.into(),
+            token_id,
+            token_hash: "valid-hash".into(),
+            created_at: Utc::now(),
+            expires_at: Utc::now() + Duration::minutes(30),
+            auth_session_code: None,
+        };
+        let mut builder = TridentTestBuilder::new();
+        Arc::get_mut(&mut builder.prt_repo)
+            .unwrap()
+            .expect_get_by_token_id()
+            .return_once(move |_| Box::pin(async move { Ok(Some(token)) }));
+        Arc::get_mut(&mut builder.hasher_repo)
+            .unwrap()
+            .expect_verify_magic_token()
+            .returning(|_, _| Box::pin(async { Ok(true) }));
+        Arc::get_mut(&mut builder.password_policy_repo)
+            .unwrap()
+            .expect_find_by_realm_id()
+            .returning(|_| Box::pin(async { Ok(None) }));
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_by_id()
+            .return_once(move |_| Box::pin(async move { Ok(Some(realm)) }));
+        Arc::get_mut(&mut builder.realm_repo)
+            .unwrap()
+            .expect_get_realm_settings()
+            .withf(move |requested| *requested == rid)
+            .returning(move |_| {
+                let mut settings = RealmSetting::new(rid, None);
+                settings.passwordless_enabled = true;
+                Box::pin(async move { Ok(Some(settings)) })
+            });
+        Arc::get_mut(&mut builder.hasher_repo)
+            .unwrap()
+            .expect_hash_password()
+            .never();
+        Arc::get_mut(&mut builder.credential_repo)
+            .unwrap()
+            .expect_set_password_credential()
+            .never();
+        Arc::get_mut(&mut builder.credential_repo)
+            .unwrap()
+            .expect_delete_password_credential()
+            .never();
+        let result = builder
+            .build()
+            .complete_password_reset(CompletePasswordResetInput {
+                webapp_base_url: TEST_WEBAPP_URL.into(),
+                browser_session: None,
+                token_id,
+                token: "valid-token".into(),
+                new_password: "Str0ng!P@ssword#2024".into(),
+            })
+            .await;
+        assert!(matches!(result, Err(CoreError::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn passwordless_passkey_enrollment_requires_verified_contact_before_challenge_or_write() {
+        for email in [None, Some(""), Some("user@example.com")] {
+            for complete in [false, true] {
+                let realm = create_test_realm_with_name("passwordless");
+                let mut user = create_test_user_with_email(&realm, "user@example.com");
+                user.email = email.map(str::to_string);
+                user.email_verified = email != Some("user@example.com");
+                let rid = realm.id;
+                let mut builder = TridentTestBuilder::new();
+                Arc::get_mut(&mut builder.realm_repo)
+                    .unwrap()
+                    .expect_get_realm_settings()
+                    .returning(move |_| {
+                        let mut settings = RealmSetting::new(rid, None);
+                        settings.passwordless_enabled = true;
+                        Box::pin(async move { Ok(Some(settings)) })
+                    });
+                Arc::get_mut(&mut builder.auth_session_repo)
+                    .unwrap()
+                    .expect_save_webauthn_challenge()
+                    .never();
+                Arc::get_mut(&mut builder.credential_repo)
+                    .unwrap()
+                    .expect_create_webauthn_credential()
+                    .never();
+                let service = builder.build();
+                let result = if complete {
+                    service
+                        .webauthn_public_key_create(
+                            Identity::User(user),
+                            webauthn_create_input(Uuid::new_v4()),
+                        )
+                        .await
+                        .map(|_| ())
+                } else {
+                    service
+                        .webauthn_public_key_create_options(
+                            Identity::User(user),
+                            WebAuthnPublicKeyCreateOptionsInput {
+                                session_code: Uuid::new_v4().to_string(),
+                                rp_info: passkey_rp_info(),
+                            },
+                        )
+                        .await
+                        .map(|_| ())
+                };
+                assert!(matches!(result, Err(CoreError::Forbidden(_))));
+            }
         }
     }
 }

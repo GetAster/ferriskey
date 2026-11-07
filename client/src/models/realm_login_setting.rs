@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RealmLoginSetting {
+    #[serde(default)]
+    pub passwordless_enabled: bool,
     #[serde(rename = "forgot_password_enabled")]
     pub forgot_password_enabled: bool,
     #[serde(rename = "identity_providers")]
@@ -40,6 +42,7 @@ impl RealmLoginSetting {
         user_registration_enabled: bool,
     ) -> RealmLoginSetting {
         RealmLoginSetting {
+            passwordless_enabled: false,
             forgot_password_enabled,
             identity_providers,
             magic_link_enabled,

@@ -1,6 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    DbBackend, EntityTrait, QueryFilter, Statement, TransactionTrait,
 };
 use tracing::error;
 use uuid::Uuid;
@@ -55,6 +56,7 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
         magic_token_hash: &HashResult,
         expires_at: DateTime<Utc>,
         auth_session_code: Option<Uuid>,
+        email: String,
     ) -> Result<(), CoreError> {
         // Extract token
         let magic_token_hash = &magic_token_hash.hash;
@@ -71,6 +73,7 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
             created_at: Set(Utc::now().naive_utc()),
             expires_at: Set(expires_at.naive_utc()),
             auth_session_code: Set(auth_session_code),
+            email: Set(Some(email)),
         };
 
         active_model.insert(&self.db).await.map_err(|e| {
@@ -113,6 +116,38 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
             })?;
 
         Ok(())
+    }
+
+    async fn consume(&self, token_id: Uuid) -> Result<bool, CoreError> {
+        let tx = self
+            .db
+            .begin()
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        let rows = MagicLinkEntity::delete_many()
+            .filter(MagicLinkColumn::TokenId.eq(token_id))
+            .filter(MagicLinkColumn::ExpiresAt.gt(Utc::now().naive_utc()))
+            .exec_with_returning(&tx)
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        let Some(link) = rows.into_iter().next() else {
+            return Ok(false);
+        };
+        let Some(email) = link.email else {
+            return Ok(false);
+        };
+        {
+            let changed = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
+                "UPDATE users SET email_verified = true WHERE id = $1 AND email = $2 AND enabled = true",
+                [link.user_id.into(), email.into()])).await.map_err(|_| CoreError::InternalServerError)?;
+            if changed.rows_affected() != 1 {
+                return Ok(false);
+            }
+        }
+        tx.commit()
+            .await
+            .map_err(|_| CoreError::InternalServerError)?;
+        Ok(true)
     }
 
     async fn cleanup_expired(&self, realm_id: Uuid) -> Result<(), CoreError> {

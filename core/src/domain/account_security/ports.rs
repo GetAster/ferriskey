@@ -89,6 +89,16 @@ pub trait PasskeyRegistrationRepository: Send + Sync {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait OtherSessionsRevocationPort: Send + Sync {
+    /// Return the database authentication time only for a live session bound to
+    /// this user and realm. Access-token issuance and refresh are not authentication.
+    fn authenticated_at(
+        &self,
+        scope: &RealmScope,
+        user: &Scoped<User>,
+        session_id: Uuid,
+        sso_cookie: &str,
+    ) -> impl Future<Output = Result<Option<DateTime<Utc>>, CoreError>> + Send;
+
     fn revoke_all_sessions_except(
         &self,
         scope: &RealmScope,

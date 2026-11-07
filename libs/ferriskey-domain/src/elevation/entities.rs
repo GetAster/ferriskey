@@ -24,11 +24,12 @@ impl From<ElevationId> for Uuid {
 pub enum ElevationProofKind {
     Password,
     Otp,
+    RecentAuthentication,
 }
 
 impl ElevationProofKind {
     pub fn is_primary(&self) -> bool {
-        matches!(self, Self::Password)
+        matches!(self, Self::Password | Self::RecentAuthentication)
     }
 }
 

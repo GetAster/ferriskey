@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryTrait, Select, TransactionTrait, sea_query::Expr,
+    QueryFilter, QuerySelect, QueryTrait, Select, TransactionTrait, sea_query::Expr,
 };
 
 use crate::{
@@ -286,6 +286,7 @@ impl RealmRepository for PostgresRealmRepository {
         realm_id: RealmId,
         algorithm: Option<String>,
         user_registration_enabled: Option<bool>,
+        passwordless_enabled: Option<bool>,
         forgot_password_enabled: Option<bool>,
         remember_me_enabled: Option<bool>,
         magic_link_enabled: Option<bool>,
@@ -325,7 +326,39 @@ impl RealmRepository for PostgresRealmRepository {
             .map_err(|_| CoreError::InternalServerError)?
             .ok_or(CoreError::NotFound)?;
 
+        if passwordless_enabled == Some(true) && !realm_setting.passwordless_enabled {
+            let users = crate::entity::users::Entity::find()
+                .select_only()
+                .column(crate::entity::users::Column::Id)
+                .filter(crate::entity::users::Column::RealmId.eq::<Uuid>(realm_id.into()))
+                .into_query();
+            if crate::entity::credentials::Entity::find()
+                .filter(crate::entity::credentials::Column::UserId.in_subquery(users.clone()))
+                .filter(crate::entity::credentials::Column::CredentialType.eq("password"))
+                .one(&self.db)
+                .await
+                .map_err(|_| CoreError::InternalServerError)?
+                .is_some()
+            {
+                return Err(CoreError::InvalidRequest);
+            }
+            if crate::entity::user_required_actions::Entity::find()
+                .filter(crate::entity::user_required_actions::Column::UserId.in_subquery(users))
+                .filter(crate::entity::user_required_actions::Column::Action.eq("update_password"))
+                .one(&self.db)
+                .await
+                .map_err(|_| CoreError::InternalServerError)?
+                .is_some()
+            {
+                return Err(CoreError::InvalidRequest);
+            }
+        }
+        let effective_passwordless =
+            passwordless_enabled.unwrap_or(realm_setting.passwordless_enabled);
         let mut realm_setting: crate::entity::realm_settings::ActiveModel = realm_setting.into();
+        if let Some(enabled) = passwordless_enabled {
+            realm_setting.passwordless_enabled = Set(enabled);
+        }
 
         if let Some(algorithm) = algorithm {
             // Only algorithms the server can sign with: anything else would be
@@ -470,6 +503,11 @@ impl RealmRepository for PostgresRealmRepository {
         let retained_resources = allowed_resources.clone();
         if let Some(allowed_resources) = allowed_resources {
             realm_setting.allowed_resources = Set(allowed_resources);
+        }
+
+        if effective_passwordless {
+            realm_setting.email_verification_enabled = Set(true);
+            realm_setting.forgot_password_enabled = Set(false);
         }
 
         let txn = self

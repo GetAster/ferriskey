@@ -151,6 +151,21 @@ where
             return Err(CoreError::AccountLocked);
         }
 
+        if scope
+            .settings()
+            .is_some_and(|settings| settings.passwordless_enabled)
+            && (!user.get().email_verified
+                || user
+                    .get()
+                    .email
+                    .as_deref()
+                    .is_none_or(|email| email.trim().is_empty()))
+        {
+            return Err(CoreError::Forbidden(
+                "A verified contact email is required".into(),
+            ));
+        }
+
         Ok((scope, user))
     }
 
@@ -296,8 +311,42 @@ where
         let (scope, user) = self.caller(&identity, &input.realm_name).await?;
         let user_id = user.get().id;
 
+        let now = Utc::now();
+        let mut expires_at = now + Duration::minutes(ELEVATION_TTL_MINUTES);
         let (accepted, kind) = match &input.proof {
+            ElevationProof::RecentAuthentication { sso_cookie } => {
+                if !scope
+                    .settings()
+                    .is_some_and(|settings| settings.passwordless_enabled)
+                    || !user.get().email_verified
+                    || user
+                        .get()
+                        .email
+                        .as_deref()
+                        .is_none_or(|email| email.trim().is_empty())
+                {
+                    return Err(CoreError::ElevationRequired);
+                }
+                let authenticated_at = self
+                    .other_sessions_revocation
+                    .authenticated_at(&scope, &user, input.session_id, sso_cookie)
+                    .await?
+                    .ok_or(CoreError::ElevationRequired)?;
+                expires_at = authenticated_at + Duration::minutes(ELEVATION_TTL_MINUTES);
+                if authenticated_at > now || expires_at <= now {
+                    return Err(CoreError::ElevationRequired);
+                }
+                (true, ElevationProofKind::RecentAuthentication)
+            }
             ElevationProof::Password(password) => {
+                if scope
+                    .settings()
+                    .is_some_and(|settings| settings.passwordless_enabled)
+                {
+                    return Err(CoreError::Forbidden(
+                        "Local passwords are disabled in this realm".into(),
+                    ));
+                }
                 if !has_local_password(self.credential_repository.as_ref(), user_id).await? {
                     warn!(
                         user_id = %user_id,
@@ -342,13 +391,7 @@ where
 
         let elevation = self
             .elevation_repository
-            .start(
-                user_id,
-                scope.id(),
-                input.session_id,
-                kind,
-                Utc::now() + Duration::minutes(ELEVATION_TTL_MINUTES),
-            )
+            .start(user_id, scope.id(), input.session_id, kind, expires_at)
             .await?;
 
         Ok(RequestElevationOutput {
@@ -364,6 +407,15 @@ where
     ) -> Result<(), CoreError> {
         let (scope, user) = self.caller(&identity, &input.realm_name).await?;
         let user_id = user.get().id;
+
+        if scope
+            .settings()
+            .is_some_and(|settings| settings.passwordless_enabled)
+        {
+            return Err(CoreError::Forbidden(
+                "Local passwords are disabled in this realm".into(),
+            ));
+        }
 
         let elevated = self
             .claim_elevation(&scope, user_id, input.session_id, input.elevation_id)
@@ -2329,5 +2381,233 @@ mod tests {
             !rendered.contains(SECRET) && !rendered.contains("hashed"),
             "secret material leaked into the listing: {rendered}"
         );
+    }
+    #[tokio::test]
+    async fn recent_authentication_grants_primary_proof_without_extending_its_window() {
+        let (mut realm, mut user, _) = actors();
+        realm
+            .settings
+            .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+            .passwordless_enabled = true;
+        user.email_verified = true;
+        let identity = Identity::User(user.clone());
+        let session = Uuid::now_v7();
+        let authenticated = Utc::now() - Duration::minutes(2);
+        let expected_expiry = authenticated + Duration::minutes(ELEVATION_TTL_MINUTES);
+        let mut harness = Harness::new();
+        harness.resolving(&realm, &user);
+        let uid = user.id;
+        let rid = realm.id;
+        harness
+            .sessions
+            .expect_authenticated_at()
+            .withf(move |scope, caller, sid, cookie| {
+                scope.id() == rid
+                    && caller.get().id == uid
+                    && *sid == session
+                    && cookie == "browser-session-secret"
+            })
+            .returning(move |_, _, _, _| Box::pin(async move { Ok(Some(authenticated)) }));
+        harness
+            .users
+            .expect_reset_failed_login_attempts()
+            .returning(|_| Box::pin(async { Ok(()) }));
+        harness
+            .elevations
+            .expect_start()
+            .withf(move |u, r, sid, proof, expiry| {
+                *u == uid
+                    && *r == rid
+                    && *sid == session
+                    && *proof == ElevationProofKind::RecentAuthentication
+                    && *expiry == expected_expiry
+            })
+            .returning(move |_, _, _, _, _| {
+                Box::pin(async move {
+                    Ok(Elevation {
+                        id: ElevationId::new(Uuid::now_v7()),
+                        user_id: uid,
+                        realm_id: rid,
+                        session_id: session,
+                        proof: ElevationProofKind::RecentAuthentication,
+                        expires_at: expected_expiry,
+                    })
+                })
+            });
+        let result = harness
+            .build()
+            .request_elevation(
+                identity,
+                RequestElevationInput {
+                    realm_name: "acme".into(),
+                    session_id: session,
+                    proof: ElevationProof::RecentAuthentication {
+                        sso_cookie: "browser-session-secret".into(),
+                    },
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.expires_at, expected_expiry);
+        assert!(ElevationProofKind::RecentAuthentication.is_primary());
+    }
+
+    #[tokio::test]
+    async fn recent_authentication_refuses_stale_future_or_absent_session() {
+        for authenticated in [
+            None,
+            Some(Utc::now() - Duration::minutes(6)),
+            Some(Utc::now() + Duration::minutes(1)),
+        ] {
+            let (mut realm, mut user, _) = actors();
+            realm
+                .settings
+                .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+                .passwordless_enabled = true;
+            user.email_verified = true;
+            let identity = Identity::User(user.clone());
+            let mut harness = Harness::new();
+            harness.resolving(&realm, &user);
+            harness
+                .sessions
+                .expect_authenticated_at()
+                .returning(move |_, _, _, _| Box::pin(async move { Ok(authenticated) }));
+            harness.elevations.expect_start().never();
+            let result = harness
+                .build()
+                .request_elevation(
+                    identity,
+                    RequestElevationInput {
+                        realm_name: "acme".into(),
+                        session_id: Uuid::now_v7(),
+                        proof: ElevationProof::RecentAuthentication {
+                            sso_cookie: "browser-session-secret".into(),
+                        },
+                    },
+                )
+                .await;
+            assert!(matches!(result, Err(CoreError::ElevationRequired)));
+        }
+    }
+
+    #[tokio::test]
+    async fn recent_authentication_requires_passwordless_realm_and_verified_contact_email() {
+        for (passwordless, verified, email) in [
+            (false, true, Some("alice@acme.test")),
+            (true, false, Some("alice@acme.test")),
+            (true, true, None),
+            (true, true, Some(" ")),
+        ] {
+            let (mut realm, mut user, _) = actors();
+            realm
+                .settings
+                .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+                .passwordless_enabled = passwordless;
+            user.email_verified = verified;
+            user.email = email.map(str::to_string);
+            let identity = Identity::User(user.clone());
+            let mut harness = Harness::new();
+            harness.resolving(&realm, &user);
+            harness.sessions.expect_authenticated_at().never();
+            harness.elevations.expect_start().never();
+            let result = harness
+                .build()
+                .request_elevation(
+                    identity,
+                    RequestElevationInput {
+                        realm_name: "acme".into(),
+                        session_id: Uuid::now_v7(),
+                        proof: ElevationProof::RecentAuthentication {
+                            sso_cookie: "browser-session-secret".into(),
+                        },
+                    },
+                )
+                .await;
+            assert!(matches!(
+                result,
+                Err(CoreError::ElevationRequired | CoreError::Forbidden(_))
+            ));
+        }
+    }
+    #[tokio::test]
+    async fn recent_authentication_can_enrol_the_first_passkey_without_a_password() {
+        let (mut realm, mut user, _) = actors();
+        realm
+            .settings
+            .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+            .passwordless_enabled = true;
+        user.email_verified = true;
+        let identity = Identity::User(user.clone());
+        let session = Uuid::now_v7();
+        let owner = user.id;
+
+        let mut harness = Harness::new();
+        harness.resolving(&realm, &user);
+        harness.granting(
+            &user,
+            realm.id,
+            session,
+            ElevationProofKind::RecentAuthentication,
+        );
+        harness.holding(user.id, vec![]);
+        harness
+            .passkey_registrations
+            .expect_start()
+            .withf(move |user_id, _, expires_at| *user_id == owner && *expires_at > Utc::now())
+            .times(1)
+            .returning(|_, _, _| Box::pin(async move { Ok(()) }));
+
+        let started = harness
+            .build()
+            .start_own_passkey_registration(
+                identity,
+                StartOwnPasskeyRegistrationInput {
+                    realm_name: "acme".into(),
+                    session_id: session,
+                    elevation_id: Uuid::now_v7(),
+                    rp_info: rp_info(),
+                },
+            )
+            .await;
+
+        assert!(started.is_ok(), "expected a challenge: {:?}", started.err());
+    }
+    #[tokio::test]
+    async fn passwordless_policy_refuses_account_password_proof_and_change_before_credentials() {
+        for change in [false, true] {
+            let (mut realm, user, identity) = actors();
+            realm
+                .settings
+                .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+                .passwordless_enabled = true;
+            let mut harness = Harness::new();
+            harness.resolving(&realm, &user);
+            harness.credentials.expect_get_password_credential().never();
+            harness
+                .credentials
+                .expect_update_password_credential()
+                .never();
+            harness.elevations.expect_start().never();
+            harness.elevations.expect_find_live().never();
+            let service = harness.build();
+            let result = if change {
+                service
+                    .change_own_password(identity, change_password(Uuid::now_v7(), "old"))
+                    .await
+            } else {
+                service
+                    .request_elevation(
+                        identity,
+                        RequestElevationInput {
+                            realm_name: "acme".into(),
+                            session_id: Uuid::now_v7(),
+                            proof: ElevationProof::Password("old".into()),
+                        },
+                    )
+                    .await
+                    .map(|_| ())
+            };
+            assert!(matches!(result, Err(CoreError::Forbidden(_))));
+        }
     }
 }

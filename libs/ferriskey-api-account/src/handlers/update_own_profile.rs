@@ -24,7 +24,7 @@ pub struct UpdateOwnProfileResponse {
     path = "/me",
     tag = "user",
     summary = "Update the caller's own profile",
-    description = "Updates firstname, lastname and email of the currently authenticated user. Username can only be changed when the realm has username editing enabled.",
+    description = "Updates firstname, lastname and email of the currently authenticated user. Username can only be changed when the realm has username editing enabled. Passwordless realms reject contact email replacement through this endpoint; a verified email-change flow is required.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
     ),

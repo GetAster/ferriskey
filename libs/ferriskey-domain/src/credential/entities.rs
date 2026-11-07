@@ -199,6 +199,8 @@ pub struct CredentialConfig {
 
 #[derive(Debug, Clone, Error)]
 pub enum CredentialError {
+    #[error("Local passwords are disabled for this realm")]
+    PasswordAuthenticationDisabled,
     #[error("Hash password error: {0}")]
     HashPasswordError(String),
 

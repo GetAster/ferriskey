@@ -238,6 +238,7 @@ where
                 user_id,
                 realm_id: realm.id.into(),
                 token_hash,
+                email: user_email.to_string(),
                 expires_at,
             })
             .await?;
@@ -340,7 +341,13 @@ where
                         .await?
                         .in_realm(&scope)?
                         .into_inner();
-                    if user.email_verified {
+                    if used_token.get().is_used()
+                        && user.enabled
+                        && user.email_verified
+                        && used_token.get().email.as_deref().is_some_and(|email| {
+                            !email.trim().is_empty() && user.email.as_deref() == Some(email)
+                        })
+                    {
                         // Email already verified, return success (idempotent)
                         tracing::info!(
                             user_id = %user.id,
@@ -360,29 +367,22 @@ where
             return Err(CoreError::InvalidOrExpiredToken);
         }
 
-        // Update user BEFORE marking token as used, so the token remains retryable
-        // if the user update fails.
         let user = self
             .user_repository
             .get_by_id(token_record.get().user_id)
             .await?
             .in_realm(&scope)?;
-
-        let updated_user = self
-            .user_repository
-            .update_user(
-                &user,
-                ferriskey_domain::user::value_objects::UpdateUserRequest {
-                    username: None,
-                    firstname: user.get().firstname.clone(),
-                    lastname: user.get().lastname.clone(),
-                    email: user.get().email.clone(),
-                    email_verified: true,
-                    enabled: user.get().enabled,
-                    required_actions: None,
-                },
-            )
-            .await?;
+        if !self
+            .email_verification_token_repository
+            .consume_and_verify(&token_record)
+            .await?
+        {
+            return Err(CoreError::InvalidOrExpiredToken);
+        }
+        // This snapshot is for audit delivery only. Never write it back: another
+        // request may have changed profile fields while the link was pending.
+        let mut updated_user = user.into_inner();
+        updated_user.email_verified = true;
 
         // Remove verify_email required action (best-effort, user is already verified)
         // NotFound is OK - it means the action wasn't there in the first place
@@ -393,17 +393,6 @@ where
             && !matches!(e, RequiredActionError::NotFound)
         {
             warn!("Failed to remove VerifyEmail required action: {}", e);
-        }
-
-        // Mark token as used (best-effort, user is already verified)
-        // We keep tokens marked as used for idempotency - if the client retries,
-        // we can check that the token was already used and the email is verified.
-        if let Err(e) = self
-            .email_verification_token_repository
-            .mark_used(&token_record)
-            .await
-        {
-            warn!("Failed to mark verification token as used: {}", e);
         }
 
         // Audit + webhook emission is best-effort: the email is already verified at
@@ -562,6 +551,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(24),
             created_at: Utc::now(),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         }
     }
 
@@ -631,8 +621,8 @@ mod tests {
         let tc = token_record.clone();
         evrt.expect_find_valid_by_hash()
             .return_once(move |_, _| Box::pin(async move { Ok(Some(Unscoped::new(tc))) }));
-        evrt.expect_mark_used()
-            .return_once(|_| Box::pin(async move { Ok(()) }));
+        evrt.expect_consume_and_verify()
+            .return_once(|_| Box::pin(async move { Ok(true) }));
         evrt.expect_delete_by_user_id()
             .return_once(|_| Box::pin(async move { Ok(0) }));
 
@@ -742,6 +732,7 @@ mod tests {
             expires_at: Utc::now() - Duration::hours(1),
             created_at: Utc::now() - Duration::hours(25),
             used_at: None,
+            email: Some("test@example.com".to_string()),
         };
 
         let mut evrt = MockEmailVerificationTokenRepository::new();
@@ -801,6 +792,7 @@ mod tests {
             expires_at: Utc::now() + Duration::hours(1),
             created_at: Utc::now(),
             used_at: Some(Utc::now() - Duration::minutes(5)),
+            email: Some("test@example.com".to_string()),
         };
 
         let mut evrt = MockEmailVerificationTokenRepository::new();
@@ -916,6 +908,7 @@ mod tests {
                 expires_at: Utc::now() + Duration::hours(24),
                 created_at: Utc::now(),
                 used_at: None,
+                email: Some("test@example.com".to_string()),
             };
             Box::pin(async move { Ok(token) })
         });
@@ -1000,6 +993,7 @@ mod tests {
                 expires_at: Utc::now() + Duration::hours(24),
                 created_at: Utc::now(),
                 used_at: None,
+                email: Some("test@example.com".to_string()),
             };
             Box::pin(async move { Ok(token) })
         });
@@ -1211,6 +1205,7 @@ mod tests {
                         expires_at: input.expires_at,
                         created_at: Utc::now(),
                         used_at: None,
+                        email: Some("test@example.com".to_string()),
                     })
                 })
             });
@@ -1306,6 +1301,7 @@ mod tests {
                     expires_at: Utc::now() + Duration::hours(24),
                     created_at: Utc::now(),
                     used_at: None,
+                    email: Some("test@example.com".to_string()),
                 })
             })
         });
@@ -1389,6 +1385,7 @@ mod tests {
                     expires_at: Utc::now() + Duration::hours(24),
                     created_at: Utc::now(),
                     used_at: None,
+                    email: Some("test@example.com".to_string()),
                 })
             })
         });

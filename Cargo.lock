@@ -2138,6 +2138,7 @@ name = "ferriskey-api-account"
 version = "0.10.2"
 dependencies = [
  "axum",
+ "axum-cookie",
  "chrono",
  "ferriskey-api-core",
  "ferriskey-core",
@@ -2215,6 +2216,7 @@ dependencies = [
  "ferriskey-core",
  "serde",
  "serde_json",
+ "tracing",
  "utoipa 5.4.0",
  "uuid",
  "validator",

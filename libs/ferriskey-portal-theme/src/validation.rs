@@ -85,6 +85,34 @@ pub fn required_blocks_for(page_type: PortalPageType) -> &'static [&'static str]
         .unwrap_or(&[])
 }
 
+/// Requirements for pages enabled by this realm's authentication policy.
+pub fn required_blocks_for_settings(
+    page_type: PortalPageType,
+    settings: Option<&ferriskey_domain::realm::RealmSetting>,
+) -> Vec<&'static str> {
+    let Some(settings) = settings else {
+        return required_blocks_for(page_type).to_vec();
+    };
+    let disabled = match page_type {
+        PortalPageType::Register => !settings.user_registration_enabled,
+        PortalPageType::ForgotPassword | PortalPageType::ResetPassword => {
+            settings.passwordless_enabled || !settings.forgot_password_enabled
+        }
+        PortalPageType::MagicLinkRequest | PortalPageType::MagicLinkVerify => {
+            !settings.magic_link_enabled
+        }
+        _ => false,
+    };
+    if disabled {
+        return Vec::new();
+    }
+    required_blocks_for(page_type)
+        .iter()
+        .copied()
+        .filter(|block| !settings.passwordless_enabled || *block != "password_input")
+        .collect()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct MissingBlocks {
     pub page_type: PortalPageType,
@@ -97,10 +125,18 @@ pub fn validate_tree(
     page_type: PortalPageType,
     tree: &serde_json::Value,
 ) -> Result<(), MissingBlocks> {
+    validate_tree_with_settings(page_type, tree, None)
+}
+
+pub fn validate_tree_with_settings(
+    page_type: PortalPageType,
+    tree: &serde_json::Value,
+    settings: Option<&ferriskey_domain::realm::RealmSetting>,
+) -> Result<(), MissingBlocks> {
     let mut present = std::collections::HashSet::new();
     collect_types(tree, &mut present);
 
-    let required = required_blocks_for(page_type);
+    let required = required_blocks_for_settings(page_type, settings);
     let missing: Vec<String> = required
         .iter()
         .filter(|required_type| !present.contains(**required_type))
@@ -122,10 +158,17 @@ pub fn validate_tree(
 pub fn validate_pages(
     pages: impl Fn(PortalPageType) -> serde_json::Value,
 ) -> Result<(), Vec<MissingBlocks>> {
+    validate_pages_with_settings(pages, None)
+}
+
+pub fn validate_pages_with_settings(
+    pages: impl Fn(PortalPageType) -> serde_json::Value,
+    settings: Option<&ferriskey_domain::realm::RealmSetting>,
+) -> Result<(), Vec<MissingBlocks>> {
     let failures: Vec<MissingBlocks> = PortalPageType::ALL
         .iter()
         .copied()
-        .filter_map(|pt| validate_tree(pt, &pages(pt)).err())
+        .filter_map(|pt| validate_tree_with_settings(pt, &pages(pt), settings).err())
         .collect();
 
     if failures.is_empty() {
@@ -158,6 +201,34 @@ fn collect_types(value: &serde_json::Value, acc: &mut std::collections::HashSet<
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn passwordless_requirements_match_activation_and_preserve_password_realms() {
+        let mut settings =
+            ferriskey_domain::realm::RealmSetting::new(uuid::Uuid::nil().into(), None);
+        settings.user_registration_enabled = true;
+        settings.forgot_password_enabled = true;
+        let tree = serde_json::json!({ "children": [
+            {"type":"email_input"}, {"type":"submit_button"}, {"type":"identity_providers"}
+        ]});
+        assert!(
+            validate_tree_with_settings(PortalPageType::Login, &tree, Some(&settings)).is_err()
+        );
+        settings.passwordless_enabled = true;
+        assert!(validate_tree_with_settings(PortalPageType::Login, &tree, Some(&settings)).is_ok());
+        assert!(
+            validate_tree_with_settings(PortalPageType::Register, &tree, Some(&settings)).is_ok()
+        );
+        assert!(
+            required_blocks_for_settings(PortalPageType::ResetPassword, Some(&settings)).is_empty()
+        );
+        assert!(
+            required_blocks_for_settings(PortalPageType::ForgotPassword, Some(&settings))
+                .is_empty()
+        );
+        settings.user_registration_enabled = false;
+        assert!(required_blocks_for_settings(PortalPageType::Register, Some(&settings)).is_empty());
+    }
 
     #[test]
     fn login_with_all_required_blocks_passes() {

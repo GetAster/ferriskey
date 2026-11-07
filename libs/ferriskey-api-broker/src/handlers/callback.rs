@@ -7,10 +7,14 @@ use axum::{
     response::IntoResponse,
 };
 
+use ferriskey_api_core::login_step::login_action_cookie;
 use ferriskey_core::domain::abyss::identity_provider::broker::{
     BrokerCallbackInput, BrokerService,
 };
+use ferriskey_core::domain::authentication::ports::AuthService;
 use ferriskey_core::domain::common::entities::app_errors::CoreError;
+use ferriskey_core::domain::email_verification::ports::EmailVerificationService;
+use ferriskey_core::domain::user::entities::RequiredAction;
 
 use ferriskey_api_core::request_context::RequestContext;
 use ferriskey_api_core::url::{FullUrl, WebappUrl};
@@ -65,7 +69,7 @@ pub async fn broker_callback(
             base_url: root_scoped_base_url.clone(),
             webapp_base_url: webapp_url.clone(),
             ip_address: context.ip_address,
-            user_agent: context.user_agent,
+            user_agent: context.user_agent.clone(),
         })
         .await
     {
@@ -91,7 +95,52 @@ pub async fn broker_callback(
         Err(e) => return Err(e.into()),
     };
 
+    let action_token = if result.second_factor_pending || !result.required_actions.is_empty() {
+        let session_id = result.browser_session_id.ok_or(CoreError::InvalidSession)?;
+        let token = state
+            .service
+            .issue_primary_login_action_token(
+                realm_name.clone(),
+                session_id,
+                result.user_id,
+                root_scoped_base_url,
+                !result.second_factor_pending,
+            )
+            .await?;
+        if result
+            .required_actions
+            .contains(&RequiredAction::VerifyEmail)
+        {
+            if let Err(error) = state
+                .service
+                .email_verification_service
+                .send_verification_email(
+                    result.user_id,
+                    realm_name.clone(),
+                    webapp_url,
+                    context.user_agent,
+                )
+                .await
+            {
+                tracing::warn!(%error, "Unable to deliver verification email after provider login");
+            }
+        }
+        Some(token)
+    } else {
+        None
+    };
     let mut response = (StatusCode::FOUND, [(LOCATION, result.redirect_url)]).into_response();
+    if let Some(token) = action_token {
+        response.headers_mut().append(
+            SET_COOKIE,
+            login_action_cookie(
+                token,
+                &state.args.server.root_path,
+                &realm_name,
+                base_url.starts_with("https://"),
+            )?,
+        );
+    }
 
     if let Some(session_id) = result.browser_session_id {
         let secure = if base_url.starts_with("https://") {

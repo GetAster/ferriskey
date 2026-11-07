@@ -15,6 +15,7 @@ use crate::entity::account_elevations::{
 
 const PROOF_PASSWORD: &str = "password";
 const PROOF_OTP: &str = "otp";
+const PROOF_RECENT_AUTHENTICATION: &str = "recent_authentication";
 
 #[derive(Debug, Clone)]
 pub struct PostgresElevationRepository {
@@ -31,6 +32,7 @@ fn proof_to_column(proof: ElevationProofKind) -> &'static str {
     match proof {
         ElevationProofKind::Password => PROOF_PASSWORD,
         ElevationProofKind::Otp => PROOF_OTP,
+        ElevationProofKind::RecentAuthentication => PROOF_RECENT_AUTHENTICATION,
     }
 }
 
@@ -38,6 +40,7 @@ fn model_to_domain(model: Model) -> Result<Elevation, CoreError> {
     let proof = match model.proof.as_str() {
         PROOF_PASSWORD => ElevationProofKind::Password,
         PROOF_OTP => ElevationProofKind::Otp,
+        PROOF_RECENT_AUTHENTICATION => ElevationProofKind::RecentAuthentication,
         other => {
             tracing::error!(
                 elevation_id = %model.id,

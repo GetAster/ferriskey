@@ -271,6 +271,14 @@ where
             self.policy.can_update_user(&identity, &realm).await,
             "insufficient permissions",
         )?;
+        if scope
+            .settings()
+            .is_some_and(|settings| settings.passwordless_enabled)
+        {
+            return Err(CoreError::Forbidden(
+                "Local passwords are disabled for this realm".into(),
+            ));
+        }
 
         let policy = self
             .password_policy_repository
@@ -375,6 +383,14 @@ where
             self.policy.can_update_user(&identity, &realm).await,
             "insufficient permissions",
         )?;
+        if scope
+            .settings()
+            .is_some_and(|settings| settings.passwordless_enabled)
+        {
+            return Err(CoreError::Forbidden(
+                "Local passwords are disabled for this realm".into(),
+            ));
+        }
 
         let target = self
             .user_repository
@@ -480,6 +496,17 @@ where
         let is_being_disabled = existing.get().enabled && !input.enabled;
 
         if let Some(ref required_actions) = input.required_actions {
+            if scope
+                .settings()
+                .is_some_and(|settings| settings.passwordless_enabled)
+                && required_actions
+                    .iter()
+                    .any(|action| action == "update_password")
+            {
+                return Err(CoreError::InvalidRequiredAction(
+                    "Password updates are disabled for this realm".into(),
+                ));
+            }
             let wants_passkey = required_actions.iter().any(|a| a == "configure_passkey");
             if wants_passkey {
                 let credentials = self
@@ -487,7 +514,11 @@ where
                     .get_credentials_by_user_id(existing.get().id)
                     .await
                     .map_err(|_| CoreError::InternalServerError)?;
-                if credentials.is_empty() {
+                if credentials.is_empty()
+                    && !scope
+                        .settings()
+                        .is_some_and(|settings| settings.passwordless_enabled)
+                {
                     return Err(CoreError::InvalidRequiredAction(
                         "Cannot assign configure_passkey to a user with no credentials".into(),
                     ));
@@ -834,6 +865,17 @@ where
         };
 
         let email = normalize_optional_email(input.email);
+        if scope
+            .settings()
+            .is_some_and(|settings| settings.passwordless_enabled)
+            && email
+                .as_ref()
+                .is_some_and(|email| Some(email) != existing.get().email.as_ref())
+        {
+            return Err(CoreError::Forbidden(
+                "Changing contact email requires a verified email-change flow; profile editing cannot change it in a passwordless realm".into(),
+            ));
+        }
         // A changed email has not been verified under its new value, whatever
         // the old address's verification status was.
         let email_verified = match &email {
@@ -2588,5 +2630,60 @@ mod tests {
 
         assert_eq!(page.metadata().total, 1);
         assert_eq!(page.data()[0].id, expected_id);
+    }
+    #[tokio::test]
+    async fn passwordless_profile_edit_cannot_replace_the_verified_contact() {
+        for email in [Some("new@example.com"), Some("alice@example.com"), None] {
+            let mut realm = create_test_realm_with_name("test-realm");
+            realm
+                .settings
+                .get_or_insert_with(|| ferriskey_domain::realm::RealmSetting::new(realm.id, None))
+                .passwordless_enabled = true;
+            let mut user = create_test_user_with_params_and_realm(
+                &realm,
+                "alice",
+                "alice@example.com".into(),
+                true,
+            );
+            user.email_verified = true;
+            let identity = Identity::User(user.clone());
+            let mut builder = UserServiceTestBuilder::new().with_realm("test-realm".into(), realm);
+            let returned = user.clone();
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_get_by_id()
+                .return_once(move |_| Box::pin(async move { Ok(Unscoped::new(returned)) }));
+            let changed = email == Some("new@example.com");
+            if changed {
+                Arc::get_mut(&mut builder.user_repo)
+                    .unwrap()
+                    .expect_update_user()
+                    .never();
+            } else {
+                Arc::get_mut(&mut builder.user_repo)
+                    .unwrap()
+                    .expect_update_user()
+                    .withf(|_, input| input.email_verified)
+                    .return_once(move |_, _| Box::pin(async move { Ok(user) }));
+            }
+            let result = builder
+                .build()
+                .update_own_profile(
+                    identity,
+                    UpdateOwnProfileInput {
+                        realm_name: "test-realm".into(),
+                        username: None,
+                        firstname: Some("Alice".into()),
+                        lastname: None,
+                        email: email.map(str::to_string),
+                    },
+                )
+                .await;
+            if changed {
+                assert!(matches!(result, Err(CoreError::Forbidden(_))));
+            } else {
+                assert!(result.is_ok());
+            }
+        }
     }
 }

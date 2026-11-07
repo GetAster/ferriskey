@@ -1,3 +1,5 @@
+import { continueLogin } from '../utils/continue-login'
+import { useNavigate } from 'react-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -13,7 +15,6 @@ import {
   startConditionalAuthentication,
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@/lib/webauthn'
-import { followServerRedirect } from '@/lib/follow-server-redirect'
 
 type Options = {
   realm_name: string | undefined
@@ -30,6 +31,7 @@ export function usePasskeyAuth({ realm_name, enabled, isAuthInitiated, getRememb
   const { mutateAsync: authenticatePasskeyAsync, mutate: authenticatePasskey } =
     usePasskeyAuthenticateMutation()
 
+  const navigate = useNavigate()
   const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
   const [conditionalUIVersion, setConditionalUIVersion] = useState(0)
   const conditionalAbortRef = useRef<AbortController | null>(null)
@@ -67,9 +69,7 @@ export function usePasskeyAuth({ realm_name, enabled, isAuthInitiated, getRememb
           rememberMe: getRememberMe(),
         })
 
-        if (result.login_url) {
-          followServerRedirect(result.login_url)
-        }
+        continueLogin({ url: result.login_url, required_actions: result.required_actions }, navigate, realm_name)
       } catch {
         // Conditional UI was aborted or failed silently — this is expected
       }
@@ -90,6 +90,7 @@ export function usePasskeyAuth({ realm_name, enabled, isAuthInitiated, getRememb
     authenticatePasskeyAsync,
     conditionalUIVersion,
     getRememberMe,
+    navigate,
   ])
 
   const onPasskeyLogin = useCallback(() => {
@@ -116,9 +117,8 @@ export function usePasskeyAuth({ realm_name, enabled, isAuthInitiated, getRememb
               { realm: realm_name, data: assertion, rememberMe: getRememberMe() },
               {
                 onSuccess: (result) => {
-                  if (result.login_url) {
-                    followServerRedirect(result.login_url)
-                  }
+                  continueLogin({ url: result.login_url, required_actions: result.required_actions }, navigate, realm_name)
+                  setIsPasskeyLoading(false)
                 },
                 onError: () => {
                   toast.error(t('passkey.failed'))
@@ -138,7 +138,7 @@ export function usePasskeyAuth({ realm_name, enabled, isAuthInitiated, getRememb
         },
       }
     )
-  }, [realm_name, requestPasskeyOptions, authenticatePasskey, getRememberMe, t])
+  }, [realm_name, requestPasskeyOptions, authenticatePasskey, getRememberMe, navigate, t])
 
   return {
     onPasskeyLogin,

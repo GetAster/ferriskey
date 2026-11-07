@@ -21,6 +21,7 @@ pub struct Model {
     pub created_at: DateTime,
     pub expires_at: DateTime,
     pub auth_session_code: Option<Uuid>,
+    pub email: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -33,6 +34,7 @@ pub enum Column {
     CreatedAt,
     ExpiresAt,
     AuthSessionCode,
+    Email,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -65,6 +67,7 @@ impl ColumnTrait for Column {
             Self::CreatedAt => ColumnType::DateTime.def(),
             Self::ExpiresAt => ColumnType::DateTime.def(),
             Self::AuthSessionCode => ColumnType::Uuid.def().null(),
+            Self::Email => ColumnType::Text.def().null(),
         }
     }
 }

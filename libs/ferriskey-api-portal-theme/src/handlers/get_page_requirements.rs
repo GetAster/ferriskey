@@ -1,8 +1,10 @@
-use axum::extract::Path;
+use axum::extract::{Path, State};
+use ferriskey_api_core::app_state::AppState;
 use ferriskey_core::domain::portal_theme::{
     entities::PortalPageType,
-    validation::{REQUIRED_BLOCKS, required_blocks_for},
+    validation::{REQUIRED_BLOCKS, required_blocks_for_settings},
 };
+use ferriskey_core::domain::realm::ports::RealmService;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -37,13 +39,25 @@ pub struct PageRequirementsResponse {
     ),
 )]
 pub async fn get_page_requirements(
-    Path(_realm_name): Path<String>,
+    Path(realm_name): Path<String>,
+    State(state): State<AppState>,
 ) -> Result<Response<PageRequirementsResponse>, ApiError> {
+    let login = state
+        .service
+        .get_login_settings(realm_name)
+        .await
+        .map_err(ApiError::from)?;
+    let mut settings =
+        ferriskey_core::domain::realm::entities::RealmSetting::new(uuid::Uuid::nil().into(), None);
+    settings.passwordless_enabled = login.passwordless_enabled;
+    settings.user_registration_enabled = login.user_registration_enabled;
+    settings.forgot_password_enabled = login.forgot_password_enabled;
+    settings.magic_link_enabled = login.magic_link_enabled;
     let data = REQUIRED_BLOCKS
         .iter()
         .map(|(pt, _)| PageRequirement {
             page_type: *pt,
-            required_blocks: required_blocks_for(*pt)
+            required_blocks: required_blocks_for_settings(*pt, Some(&settings))
                 .iter()
                 .map(|s| (*s).to_string())
                 .collect(),

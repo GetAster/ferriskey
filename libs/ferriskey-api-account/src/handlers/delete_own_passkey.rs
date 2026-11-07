@@ -29,7 +29,7 @@ pub struct DeletePasskeyResponse {
     path = "/me/passkeys/{credential_id}",
     tag = "account",
     summary = "Remove one of the caller's passkeys",
-    description = "Refused when it would leave the account with no way to sign in, or without the second factor the realm or one of the caller's roles requires. A credential that is not a passkey, or belongs to someone else, answers not found. Requires an elevation proved with a password.",
+    description = "Refused when it would leave the account with no way to sign in, or without the second factor the realm or one of the caller's roles requires. A credential that is not a passkey, or belongs to someone else, answers not found. Requires an elevation proved with a password or recent authentication in a passwordless realm.",
     params(
         ("realm_name" = String, Path, description = "Realm name"),
         ("credential_id" = Uuid, Path, description = "Identifier of the passkey to remove"),
@@ -43,7 +43,7 @@ pub struct DeletePasskeyResponse {
         (status = 200, description = "Passkey removed", body = DeletePasskeyResponse),
         (status = 400, description = "Invalid request data", body = ApiErrorResponse),
         (status = 401, description = "The account is locked or disabled", body = ApiErrorResponse),
-        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password", body = ApiErrorResponse),
+        (status = 403, description = "No live elevation for this caller and session, or the elevation was not proved with a password or recent authentication in a passwordless realm", body = ApiErrorResponse),
         (status = 404, description = "No such passkey on this account, or no such realm", body = ApiErrorResponse),
         (status = 409, description = "The removal would lock the account out or break its MFA requirement", body = ApiErrorResponse),
         (status = 500, description = "Internal server error", body = ApiErrorResponse),

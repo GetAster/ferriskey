@@ -91,6 +91,7 @@ impl<R: RealmRepository> RealmRepository for InvalidatingRealmRepository<R> {
         realm_id: RealmId,
         algorithm: Option<String>,
         user_registration_enabled: Option<bool>,
+        passwordless_enabled: Option<bool>,
         forgot_password_enabled: Option<bool>,
         remember_me_enabled: Option<bool>,
         magic_link_enabled: Option<bool>,
@@ -129,6 +130,7 @@ impl<R: RealmRepository> RealmRepository for InvalidatingRealmRepository<R> {
                 realm_id,
                 algorithm,
                 user_registration_enabled,
+                passwordless_enabled,
                 forgot_password_enabled,
                 remember_me_enabled,
                 magic_link_enabled,
@@ -250,6 +252,7 @@ mod tests {
              _,
              _,
              _,
+             _,
              _| {
                 let settings = RealmSetting::new(realm_id, None);
                 Box::pin(async move { Ok(settings) })
@@ -260,6 +263,7 @@ mod tests {
         repository
             .update_realm_setting(
                 RealmId::default(),
+                None,
                 None,
                 None,
                 None,

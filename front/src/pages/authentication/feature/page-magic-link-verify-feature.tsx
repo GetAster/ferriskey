@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useLocation, useParams } from 'react-router'
+import { useLocation, useParams, useNavigate } from 'react-router'
 import { useVerifyMagicLink } from '@/api/trident.api'
 import { apiErrorMessage } from '@/lib/api-error'
 import PageMagicLinkVerify from '../ui/page-magic-link-verify'
 import { AUTH_NAMESPACE } from '../constants'
-import { followServerRedirect } from '@/lib/follow-server-redirect'
+import { continueLogin } from '../utils/continue-login'
 
 type VerifyStatus = 'loading' | 'error'
 
 export default function PageMagicLinkVerifyFeature() {
   const { realm_name } = useParams()
+  const navigate = useNavigate()
   const { t } = useTranslation(AUTH_NAMESPACE)
   const location = useLocation()
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search])
@@ -39,8 +40,10 @@ export default function PageMagicLinkVerifyFeature() {
       query: { token_id: tokenId, magic_token: magicToken },
     })
       .then((data) => {
-        if (data.url) {
-          followServerRedirect(data.url)
+        if (data.url || data.required_actions?.length) {
+          continueLogin({ url: data.url, required_actions: data.required_actions ?? [] }, navigate, realm)
+        } else if (data.status === 'RequiresOtpChallenge') {
+          navigate(`/realms/${realm}/authentication/otp`)
         } else {
           setErrorMessage(t('magic_link.verify.no_redirect'))
           setStatus('error')

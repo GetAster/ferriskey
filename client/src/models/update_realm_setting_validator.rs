@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct UpdateRealmSettingValidator {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub passwordless_enabled: Option<bool>,
     #[serde(
         rename = "default_signing_algorithm",
         default,
@@ -61,6 +63,7 @@ impl UpdateRealmSettingValidator {
     pub fn new() -> UpdateRealmSettingValidator {
         UpdateRealmSettingValidator {
             default_signing_algorithm: None,
+            passwordless_enabled: None,
             forgot_password_enabled: None,
             magic_link_enabled: None,
             magic_link_ttl: None,
