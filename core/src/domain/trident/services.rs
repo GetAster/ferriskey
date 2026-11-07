@@ -1,6 +1,6 @@
-use ferriskey_domain::common::email_limits::{EmailSendLimits, recipient_hash_hex};
 use base64::Engine as _;
 use ferriskey_domain::authentication::evidence::{AuthenticationEvidence, AuthenticationProof};
+use ferriskey_domain::common::email_limits::{EmailSendLimits, recipient_hash_hex};
 use sha2::Digest as _;
 use std::{
     sync::Arc,

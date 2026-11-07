@@ -1268,6 +1268,7 @@ where
                 browser_session_id: Some(*browser_session_id),
                 required_actions: Vec::new(),
                 second_factor_pending: false,
+                pending_provider_link: None,
             });
         }
 
@@ -1285,6 +1286,7 @@ where
                 browser_session_id: Some(*browser_session_id),
                 required_actions: Vec::new(),
                 second_factor_pending: false,
+                pending_provider_link: None,
             });
         }
 
@@ -1820,10 +1822,17 @@ mod tests {
         original.reauth_session_id = Some(Uuid::new_v4());
         original.user_session_id = Some(Uuid::new_v4());
         original.consent_token_hash = Some("previous-consent".into());
+        original.auth_evidence = Some(AuthenticationEvidence::new(AuthenticationProof::EmailLink));
+        original.auth_requirements = Some(ferriskey_domain::authentication::evidence::AuthenticationRequirements::parse(
+            Some(r#"{"id_token":{"acr":{"essential":true,"value":"phr"}}}"#),
+            None, Some(300), Utc::now().timestamp(),
+        ).unwrap());
         let deadline = Utc::now() + Duration::minutes(2);
         let pending = pending_connection_session(original.clone(), user, deadline).unwrap();
         assert_ne!(pending.id, original.id);
         assert_eq!(pending.issuer, original.issuer);
+        assert_eq!(pending.auth_requirements, original.auth_requirements);
+        assert!(pending.auth_evidence.is_none());
         assert_eq!(pending.resource, original.resource);
         assert_eq!(pending.code_challenge, original.code_challenge);
         assert_eq!(pending.state, original.state);
