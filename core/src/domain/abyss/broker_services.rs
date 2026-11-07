@@ -1,3 +1,4 @@
+use ferriskey_domain::authentication::evidence::{AuthenticationEvidence, AuthenticationProof};
 use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -500,6 +501,12 @@ enum CodeTarget {
 #[derive(Debug, PartialEq, Eq)]
 enum CodeIssue {
     Issued,
+    PasskeyRequired {
+        browser_session_id: Uuid,
+    },
+    ReauthenticationRequired {
+        browser_session_id: Uuid,
+    },
     ActionsRequired {
         required_actions: Vec<RequiredAction>,
         second_factor_pending: bool,
@@ -521,6 +528,7 @@ async fn issue_login_code<ASR, ADM>(
     webapp_base_url: &str,
     authorization_code: &str,
     compass_flow_id: Option<Uuid>,
+    auth_evidence: Option<AuthenticationEvidence>,
 ) -> Result<CodeIssue, CoreError>
 where
     ASR: AuthSessionRepository,
@@ -545,6 +553,14 @@ where
         }
     };
 
+    let mut auth_session = auth_session;
+    if let Some(evidence) = auth_evidence {
+        sessions
+            .record_authentication(auth_session.id, user_id, evidence.clone())
+            .await?;
+        auth_session.auth_evidence = Some(evidence);
+        auth_session.user_id = Some(user_id);
+    }
     let auth_session_id = auth_session.id;
     let admitted = admission
         .admit(AdmitLoginInput {
@@ -554,7 +570,21 @@ where
             scope: scope.clone(),
             webapp_base_url: webapp_base_url.to_string(),
         })
-        .await?;
+        .await;
+    let admitted = match admitted {
+        Ok(admitted) => admitted,
+        Err(CoreError::PasskeyAuthenticationRequired) => {
+            return Ok(CodeIssue::PasskeyRequired {
+                browser_session_id: auth_session_id,
+            });
+        }
+        Err(CoreError::ReauthenticationRequired) => {
+            return Ok(CodeIssue::ReauthenticationRequired {
+                browser_session_id: auth_session_id,
+            });
+        }
+        Err(error) => return Err(error),
+    };
 
     if let LoginAdmission::ActionsRequired {
         required_actions,
@@ -902,9 +932,45 @@ where
         };
 
         // 7. Extract user info from tokens
-        let user_info = self
-            .extract_user_info(&oauth_config, &token_response, session.nonce.as_deref())
-            .await?;
+        let (user_info, upstream_iss, upstream_sub, authenticated_at) = if let Some(id_token) =
+            token_response
+                .id_token
+                .as_ref()
+                .filter(|_| oauth_config.jwks_url.is_some() && oauth_config.issuer.is_some())
+        {
+            let verified = self
+                .verify_id_token(id_token, &oauth_config, session.nonce.as_deref())
+                .await?;
+            let issuer = verified["iss"].as_str().map(str::to_owned);
+            let subject = verified["sub"].as_str().map(str::to_owned);
+            let authenticated_at = verified
+                .get("auth_time")
+                .and_then(|v| v.as_i64())
+                .filter(|time| *time >= 0 && *time <= Utc::now().timestamp());
+            (
+                user_info_from_claims(verified)?,
+                issuer,
+                subject,
+                authenticated_at,
+            )
+        } else {
+            (
+                self.extract_user_info(&oauth_config, &token_response, session.nonce.as_deref())
+                    .await?,
+                None,
+                None,
+                None,
+            )
+        };
+        let evidence = AuthenticationEvidence {
+            method: AuthenticationProof::Federated {
+                provider: idp.get().alias.clone(),
+                upstream_iss,
+                upstream_sub,
+            },
+            authenticated_at,
+            otp_verified: false,
+        };
 
         // 8. Find or create user
         let (user, is_new_user) = self
@@ -965,6 +1031,7 @@ where
             &input.webapp_base_url,
             &authorization_code,
             flow_id.as_ref().map(|id| id.0),
+            Some(evidence),
         )
         .await?;
 
@@ -972,6 +1039,40 @@ where
         self.broker_session_repository
             .delete(&broker_session)
             .await?;
+
+        if let CodeIssue::ReauthenticationRequired { browser_session_id } = &issue {
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/login?reauthentication_required=true",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user,
+                client_id: client.client_id,
+                browser_session_id: Some(*browser_session_id),
+                required_actions: Vec::new(),
+                second_factor_pending: false,
+            });
+        }
+
+        if let CodeIssue::PasskeyRequired { browser_session_id } = &issue {
+            return Ok(BrokerCallbackOutput {
+                redirect_url: format!(
+                    "{}/realms/{}/authentication/login?passkey_required=true",
+                    input.webapp_base_url.trim_end_matches('/'),
+                    input.realm_name
+                ),
+                authorization_code: None,
+                user_id: user.id,
+                is_new_user,
+                client_id: client.client_id,
+                browser_session_id: Some(*browser_session_id),
+                required_actions: Vec::new(),
+                second_factor_pending: false,
+            });
+        }
 
         if let CodeIssue::ActionsRequired {
             required_actions,
@@ -1497,6 +1598,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("consent is not an error");
@@ -1551,6 +1653,7 @@ mod tests {
             CodeTarget::Existing(session_id),
             "https://app.example",
             "must-not-issue",
+            None,
             None,
         )
         .await
@@ -1609,6 +1712,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("an admitted login gets its code");
@@ -1643,6 +1747,7 @@ mod tests {
             CodeTarget::New(Box::new(session)),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await
@@ -1691,6 +1796,7 @@ mod tests {
             "https://app.example",
             "the-code",
             None,
+            None,
         )
         .await
         .expect("an admitted login gets its code");
@@ -1724,6 +1830,7 @@ mod tests {
             CodeTarget::New(Box::new(session)),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await;
@@ -1963,6 +2070,7 @@ mod tests {
             CodeTarget::Existing(session_id),
             "https://app.example",
             "the-code",
+            None,
             None,
         )
         .await;

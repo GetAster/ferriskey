@@ -31,6 +31,7 @@ pub struct UserSession {
     pub persistent: bool,
     /// When the user last authenticated interactively in this session.
     pub authenticated_at: DateTime<Utc>,
+    pub auth_evidence: Option<crate::authentication::evidence::AuthenticationEvidence>,
 }
 
 impl UserSession {
@@ -56,6 +57,7 @@ impl UserSession {
             sso_token_hash: None,
             persistent: false,
             authenticated_at: now,
+            auth_evidence: None,
         }
     }
 

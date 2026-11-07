@@ -405,6 +405,7 @@ pub struct RefreshToken {
     pub session_id: Option<Uuid>,
     pub client_id: Option<String>,
     pub scope: Option<String>,
+    pub auth_evidence: Option<ferriskey_domain::authentication::evidence::AuthenticationEvidence>,
 }
 
 impl RefreshToken {
@@ -436,6 +437,7 @@ impl RefreshToken {
             session_id: None,
             client_id: None,
             scope: None,
+            auth_evidence: None,
         }
     }
 }

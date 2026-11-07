@@ -126,6 +126,10 @@ pub struct AuthRequest {
     /// than this asks the user to authenticate again.
     #[serde(default)]
     pub max_age: Option<i64>,
+    #[serde(default)]
+    pub claims: Option<String>,
+    #[serde(default)]
+    pub acr_values: Option<String>,
     /// RFC 8707 resource indicator: becomes the audience of the access token.
     /// Must be one of the realm's allowed resources.
     #[serde(default)]
@@ -236,6 +240,7 @@ pub async fn auth_handler(
     let result = match state
         .service
         .auth(AuthInput {
+            auth_requirements: Some(ferriskey_core::domain::authentication::evidence::AuthenticationRequirements::parse(params.claims.as_deref(), params.acr_values.as_deref(), params.max_age, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_| ApiError::InternalServerError("Clock error".into()))?.as_secs() as i64).map_err(|_| ApiError::BadRequest("Invalid authentication requirements".into()))?),
             client_id: params.client_id.clone(),
             realm_name: realm_name.clone(),
             redirect_uri: params.redirect_uri.clone(),
@@ -343,7 +348,7 @@ pub async fn auth_handler(
                     realm = %realm_name,
                     client_id = %params.client_id,
                     session_code = %result.session.id,
-                    error = ?e,
+                    reason = e.reason(),
                     "SSO session refused, falling back to the login page"
                 );
                 sso_refusal = Some(e);
@@ -366,6 +371,19 @@ pub async fn auth_handler(
         ));
     }
 
+    if matches!(
+        sso_refusal,
+        Some(CoreError::UnmetAuthenticationRequirements { .. })
+    ) {
+        return Ok(authorization_error_response(
+            &params.redirect_uri,
+            "unmet_authentication_requirements",
+            params.state.as_deref(),
+            &issuer,
+        ));
+    }
+    let passkey_required = matches!(sso_refusal, Some(CoreError::PasskeyAuthenticationRequired));
+
     // A cookie still naming a live session (prompt=login, max_age exceeded, a
     // step still due) is kept: the login re-authenticates into its session,
     // and an abandoned login leaves the other applications signed in.
@@ -382,6 +400,9 @@ pub async fn auth_handler(
     };
 
     let mut full_url = webapp_login_url(&webapp_url, &realm_name, &result.login_url);
+    if passkey_required {
+        full_url.push_str("&passkey_required=true");
+    }
 
     let stale_sso_cookie = cookie.get(SSO_SESSION_COOKIE).is_some() && !keeps_live_session;
     // No longer honoured since the SSO session replaced it; cleared from the

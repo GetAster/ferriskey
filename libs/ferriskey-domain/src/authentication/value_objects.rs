@@ -195,6 +195,7 @@ pub struct GenerateTokenInput {
     /// When the user last authenticated interactively, as a Unix timestamp:
     /// the ID token's `auth_time`, which OIDC `max_age` relies on.
     pub auth_time: Option<i64>,
+    pub auth_evidence: Option<crate::authentication::evidence::AuthenticationEvidence>,
     pub resource: Option<String>,
 }
 
@@ -287,6 +288,8 @@ pub struct EndSessionOutput {
 
 #[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Default)]
 pub struct UserInfoResponse {
+    #[serde(flatten)]
+    pub authentication_claims: std::collections::HashMap<String, serde_json::Value>,
     pub sub: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -310,6 +313,7 @@ pub struct UserInfoResponse {
 impl UserInfoResponse {
     pub fn from_user(user: &User) -> Self {
         Self {
+            authentication_claims: Default::default(),
             sub: user.id.to_string(),
             email: user.email.clone(),
             email_verified: Some(user.email_verified),

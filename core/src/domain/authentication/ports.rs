@@ -71,6 +71,13 @@ pub trait AuthSessionRepository: Send + Sync {
         user_id: Uuid,
         user_session_id: Uuid,
     ) -> impl Future<Output = Result<(), AuthenticationError>> + Send;
+    fn record_authentication(
+        &self,
+        session_code: Uuid,
+        user_id: Uuid,
+        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
+    ) -> impl Future<Output = Result<(), AuthenticationError>> + Send;
+
     fn save_webauthn_challenge(
         &self,
         session_code: Uuid,
@@ -333,6 +340,7 @@ pub trait SsoSessionPort: Send + Sync {
         client_id: Uuid,
         remember_me: bool,
         reauth_session_id: Option<Uuid>,
+        auth_evidence: Option<ferriskey_domain::authentication::evidence::AuthenticationEvidence>,
     ) -> impl Future<Output = Result<OpenedSsoSession, CoreError>> + Send;
 }
 
@@ -359,6 +367,12 @@ pub enum LoginAdmission {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait LoginAdmissionPort: Send + Sync {
+    fn check_authentication_requirements(
+        &self,
+        auth_session: &AuthSession,
+        user_id: Uuid,
+    ) -> impl Future<Output = Result<(), CoreError>> + Send;
+
     fn admit(
         &self,
         input: AdmitLoginInput,

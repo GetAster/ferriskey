@@ -1329,4 +1329,135 @@ mod tests {
             );
         });
     }
+    fn token_payload(token: &str) -> serde_json::Value {
+        use base64::Engine as _;
+        serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(token.split('.').nth(1).unwrap())
+                .unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL"]
+    fn authentication_evidence_survives_sso_code_exchange_userinfo_and_refresh() {
+        let _serial = serial();
+        rt().block_on(async {
+            set_admin_enabled(true).await;
+            let server = make_server();
+            let code = survey_code_from_sso(&server).await;
+            let token = exchange_survey_code(&server, &code).await;
+            assert_eq!(token.status_code(),200,"{}",token.text());
+            let tokens = token.json::<serde_json::Value>();
+            let original = token_payload(tokens["id_token"].as_str().unwrap());
+            assert_eq!(original["amr"],json!(["pwd"]));
+            assert_eq!(original["aster_auth"],json!({"method":"password"}));
+            assert!(original.get("acr").is_none());
+            // A later login must not upgrade the old token or refresh lineage.
+            sqlx::query("UPDATE user_sessions SET auth_evidence = $1 WHERE id = (SELECT user_session_id FROM auth_sessions WHERE code = $2)")
+                .bind(json!({"authenticated_at":chrono::Utc::now().timestamp(),"method":"passkey","credential":"another-proof","uv":true}))
+                .bind(&code).execute(&shared_ctx().pool).await.unwrap();
+            let info = server.get(&format!("/realms/{}/protocol/openid-connect/userinfo",realm())).add_header("Authorization",format!("Bearer {}",tokens["access_token"].as_str().unwrap())).await;
+            assert_eq!(info.status_code(),200,"{}",info.text());
+            assert_eq!(info.json::<serde_json::Value>()["aster_auth"],original["aster_auth"]);
+            let refreshed = server.post(&format!("/realms/{}/protocol/openid-connect/token",realm())).form(&[
+                ("grant_type","refresh_token"),("client_id",SURVEY_CLIENT_ID),("client_secret","survey-secret"),("refresh_token",tokens["refresh_token"].as_str().unwrap())]).await;
+            assert_eq!(refreshed.status_code(),200,"{}",refreshed.text());
+            let refreshed = refreshed.json::<serde_json::Value>();
+            let renewed = token_payload(refreshed["id_token"].as_str().unwrap());
+            assert_eq!(renewed["aster_auth"],original["aster_auth"]);
+            assert_eq!(renewed["auth_time"],original["auth_time"]);
+            assert!(renewed.get("acr").is_none());
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL"]
+    fn essential_passkey_requirement_cannot_be_satisfied_by_password_or_sso() {
+        let _serial = serial();
+        rt().block_on(async {
+            set_admin_enabled(true).await;
+            let server = make_server();
+            let sso = sign_in(&server).await;
+            let claims = r#"{"id_token":{"acr":{"essential":true,"values":["phr"]}}}"#;
+            let refused = survey_authorize_with(&server, Some(&sso), &[("claims", claims)]).await;
+            let redirect = location_of(&refused);
+            assert!(redirect.starts_with(SURVEY_REDIRECT_URI), "{redirect}");
+            assert!(
+                redirect.contains("error=unmet_authentication_requirements"),
+                "{redirect}"
+            );
+            assert!(redirect.contains("state=survey-state"), "{redirect}");
+            assert!(!redirect.contains("code="), "{redirect}");
+            let silent = survey_authorize_with(
+                &server,
+                Some(&sso),
+                &[("claims", claims), ("prompt", "none")],
+            )
+            .await;
+            assert!(location_of(&silent).contains("error=login_required"));
+            let start = survey_authorize_with(&server, None, &[("claims", claims)]).await;
+            let login = server
+                .post(&format!("/realms/{}/login-actions/authenticate", realm()))
+                .add_cookie(start.cookie("FERRISKEY_SESSION"))
+                .add_query_param("client_id", SURVEY_CLIENT_ID)
+                .json(&json!({"username":"admin","password":"admin"}))
+                .await;
+            assert_eq!(login.status_code(), 403, "{}", login.text());
+            let error = login.json::<serde_json::Value>();
+            assert_eq!(error["reason"], "unmet_authentication_requirements");
+            assert!(
+                error["redirect_url"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(SURVEY_REDIRECT_URI)
+            );
+        });
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL"]
+    fn legacy_session_does_not_invent_method_claims() {
+        let _serial = serial();
+        rt().block_on(async {
+            set_admin_enabled(true).await;
+            let server = make_server();
+            let sso = sign_in(&server).await;
+            sqlx::query("UPDATE user_sessions SET auth_evidence=NULL WHERE user_id=(SELECT id FROM users WHERE username='admin')").execute(&shared_ctx().pool).await.unwrap();
+            let response = start_survey_authorization(&server,Some(&sso)).await;
+            let token = exchange_survey_code(&server,&code_of(&location_of(&response))).await;
+            assert_eq!(token.status_code(),200,"{}",token.text());
+            let claims = token_payload(token.json::<serde_json::Value>()["id_token"].as_str().unwrap());
+            assert!(claims.get("amr").is_none()); assert!(claims.get("acr").is_none()); assert!(claims.get("aster_auth").is_none());
+        });
+    }
+    #[test]
+    #[ignore = "requires PostgreSQL"]
+    fn fresh_passkey_snapshot_meets_essential_acr_and_stale_proof_does_not() {
+        let _serial = serial();
+        rt().block_on(async {
+            set_admin_enabled(true).await;
+            let server = make_server();
+            let sso = sign_in(&server).await;
+            let now = chrono::Utc::now().timestamp();
+            // Model a server-verified assertion. The cryptographic recording path is
+            // separately exercised with actual signed assertions by the core tests.
+            sqlx::query("UPDATE user_sessions SET auth_evidence=$1 WHERE user_id=(SELECT id FROM users WHERE username='admin')")
+                .bind(json!({"authenticated_at":now,"method":"passkey","credential":"verified-proof","uv":true})).execute(&shared_ctx().pool).await.unwrap();
+            let required = r#"{"id_token":{"acr":{"essential":true,"value":"phr"}}}"#;
+            let authorize = survey_authorize_with(&server,Some(&sso),&[("claims",required),("max_age","300")]).await;
+            let location = location_of(&authorize);
+            assert!(location.contains("code="),"{location}");
+            let token = exchange_survey_code(&server,&code_of(&location)).await;
+            assert_eq!(token.status_code(),200,"{}",token.text());
+            let claims = token_payload(token.json::<serde_json::Value>()["id_token"].as_str().unwrap());
+            assert_eq!(claims["acr"],"phr"); assert_eq!(claims["amr"],json!(["pop","user","mfa"]));
+            assert_eq!(claims["auth_time"],now);
+            sqlx::query("UPDATE user_sessions SET auth_evidence=$1 WHERE user_id=(SELECT id FROM users WHERE username='admin')")
+                .bind(json!({"authenticated_at":now-301,"method":"passkey","credential":"verified-proof","uv":true})).execute(&shared_ctx().pool).await.unwrap();
+            let stale = survey_authorize_with(&server,Some(&sso),&[("claims",required),("max_age","300"),("prompt","none")]).await;
+            assert!(location_of(&stale).contains("error=")); assert!(!location_of(&stale).contains("code="));
+        });
+    }
 }

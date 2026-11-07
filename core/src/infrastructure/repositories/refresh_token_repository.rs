@@ -37,6 +37,9 @@ impl From<crate::entity::refresh_tokens::Model> for RefreshToken {
             session_id: model.session_id,
             client_id: model.client_id,
             scope: model.scope,
+            auth_evidence: model
+                .auth_evidence
+                .and_then(|v| serde_json::from_value(v).ok()),
         }
     }
 }
@@ -50,7 +53,7 @@ WHERE id = $1 AND jti = $2 AND status = 'active' AND user_id = $10 AND family_id
 RETURNING
         id, jti, user_id, revoked, expires_at, created_at, family_id, status, replaced_by,
         rotated_at, session_id, resource, token_hash, client_id, scope, previous_jti,
-        previous_token_hash";
+        previous_token_hash, auth_evidence";
 
 const CONSUME_AND_ROTATE_SQL: &str = "\
 UPDATE refresh_tokens t
@@ -60,7 +63,7 @@ FROM (
     SELECT
             id, jti, user_id, revoked, expires_at, created_at, family_id, status, replaced_by,
             rotated_at, session_id, resource, token_hash, client_id, scope, previous_jti,
-            previous_token_hash
+            previous_token_hash, auth_evidence
     FROM refresh_tokens
     WHERE token_hash = $1 AND client_id = $2 AND status = 'active'
       AND (expires_at IS NULL OR expires_at > $4)
@@ -73,13 +76,13 @@ RETURNING
     o.status AS c_status, o.replaced_by AS c_replaced_by, o.rotated_at AS c_rotated_at,
     o.session_id AS c_session_id, o.resource AS c_resource, o.token_hash AS c_token_hash,
     o.client_id AS c_client_id, o.scope AS c_scope, o.previous_jti AS c_previous_jti,
-    o.previous_token_hash AS c_previous_token_hash,
+    o.previous_token_hash AS c_previous_token_hash, o.auth_evidence AS c_auth_evidence,
     t.id AS s_id, t.jti AS s_jti, t.user_id AS s_user_id, t.revoked AS s_revoked,
     t.expires_at AS s_expires_at, t.created_at AS s_created_at, t.family_id AS s_family_id,
     t.status AS s_status, t.replaced_by AS s_replaced_by, t.rotated_at AS s_rotated_at,
     t.session_id AS s_session_id, t.resource AS s_resource, t.token_hash AS s_token_hash,
     t.client_id AS s_client_id, t.scope AS s_scope, t.previous_jti AS s_previous_jti,
-    t.previous_token_hash AS s_previous_token_hash";
+    t.previous_token_hash AS s_previous_token_hash, t.auth_evidence AS s_auth_evidence";
 
 /// A row holds its current token and the one before it. Presenting the previous one reads as the
 /// superseded token it is, whatever the row's own status says about the current one.
@@ -123,6 +126,31 @@ impl PostgresRefreshTokenRepository {
 }
 
 impl RefreshTokenRepository for PostgresRefreshTokenRepository {
+    async fn set_authentication_evidence(
+        &self,
+        jti: Uuid,
+        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
+    ) -> Result<(), JwtError> {
+        let value =
+            serde_json::to_value(evidence).map_err(|e| JwtError::GenerationError(e.to_string()))?;
+        let result = crate::entity::refresh_tokens::Entity::update_many()
+            .col_expr(
+                crate::entity::refresh_tokens::Column::AuthEvidence,
+                Expr::value(value),
+            )
+            .filter(crate::entity::refresh_tokens::Column::Jti.eq(jti))
+            .filter(crate::entity::refresh_tokens::Column::AuthEvidence.is_null())
+            .exec(&self.issued_db)
+            .await
+            .map_err(|e| JwtError::GenerationError(e.to_string()))?;
+        if result.rows_affected != 1 {
+            return Err(JwtError::GenerationError(
+                "missing refresh token evidence target".into(),
+            ));
+        }
+        Ok(())
+    }
+
     async fn create(
         &self,
         jti: Uuid,
@@ -153,6 +181,7 @@ impl RefreshTokenRepository for PostgresRefreshTokenRepository {
             scope: Set(scope),
             previous_jti: Set(None),
             previous_token_hash: Set(None),
+            auth_evidence: Set(None),
         };
 
         let refresh_token = model
@@ -193,6 +222,7 @@ impl RefreshTokenRepository for PostgresRefreshTokenRepository {
             scope: Set(scope),
             previous_jti: Set(None),
             previous_token_hash: Set(None),
+            auth_evidence: Set(None),
         };
 
         let refresh_token = model
@@ -1170,5 +1200,64 @@ mod tests {
             consume(&seeded, &token, "web").await,
             ConsumeOutcome::NotConsumed
         ));
+    }
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn opaque_rotation_preserves_original_authentication_evidence() {
+        use ferriskey_domain::authentication::evidence::{
+            AuthenticationEvidence, AuthenticationProof,
+        };
+        let seeded = seed().await;
+        let (token, row) = issue_opaque(&seeded, "web", chrono::Duration::hours(1)).await;
+        let evidence = AuthenticationEvidence {
+            authenticated_at: Some(42),
+            method: AuthenticationProof::EmailLink,
+            otp_verified: false,
+        };
+        seeded
+            .repository
+            .set_authentication_evidence(row.jti, evidence.clone())
+            .await
+            .unwrap();
+        assert!(
+            seeded
+                .repository
+                .set_authentication_evidence(
+                    row.jti,
+                    AuthenticationEvidence::new(AuthenticationProof::Password)
+                )
+                .await
+                .is_err()
+        );
+        let successor_token = OpaqueRefreshToken::generate();
+        let outcome = seeded
+            .repository
+            .consume_and_rotate(
+                token.hash(),
+                "web",
+                RefreshTokenSuccessor {
+                    jti: Uuid::new_v4(),
+                    expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+                    token_hash: Some(successor_token.hash()),
+                },
+            )
+            .await
+            .unwrap();
+        let ConsumeOutcome::Rotated {
+            consumed,
+            successor,
+        } = outcome
+        else {
+            panic!("rotation expected")
+        };
+        assert_eq!(consumed.auth_evidence, Some(evidence.clone()));
+        assert_eq!(successor.auth_evidence, Some(evidence.clone()));
+        let persisted = seeded
+            .repository
+            .get_by_hash(successor_token.hash())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(persisted.auth_evidence, Some(evidence));
     }
 }

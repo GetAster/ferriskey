@@ -177,6 +177,8 @@ impl From<CoreError> for ApiError {
             CoreError::InvalidKey(msg) => Self::BadRequest(format!("Invalid key: {}", msg).into()),
             CoreError::SessionNotFound => Self::NotFound("Session not found".into()),
             CoreError::SessionExpired => Self::Unauthorized("Session expired".into()),
+            CoreError::PasskeyAuthenticationRequired => Self::Unauthorized("Use a passkey to continue".into()),
+            CoreError::UnmetAuthenticationRequirements { redirect_url } => Self::Forbidden(ApiErrorBody { message: "The application authentication requirements cannot be met".into(), reason: Some(reason), redirect_url: Some(redirect_url) }),
             CoreError::ReauthenticationRequired => {
                 Self::Unauthorized("Re-authentication required".into())
             }

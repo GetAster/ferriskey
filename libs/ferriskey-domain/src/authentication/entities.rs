@@ -282,6 +282,7 @@ impl AuthCompletion {
 }
 
 pub struct AuthInput {
+    pub auth_requirements: Option<crate::authentication::evidence::AuthenticationRequirements>,
     pub client_id: String,
     pub realm_name: String,
     pub redirect_uri: String,

@@ -64,6 +64,7 @@ where
         client_id: Uuid,
         remember_me: bool,
         reauth_session_id: Option<Uuid>,
+        auth_evidence: Option<ferriskey_domain::authentication::evidence::AuthenticationEvidence>,
     ) -> Result<OpenedSsoSession, CoreError> {
         let realm_settings = self
             .realm_repository
@@ -90,6 +91,7 @@ where
             scope,
             lifetimes.refresh_token,
             remember_me && realm_settings.remember_me_enabled,
+            auth_evidence,
         )
         .await?;
 

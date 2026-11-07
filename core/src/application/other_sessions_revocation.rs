@@ -163,6 +163,7 @@ mod tests {
 
     fn session(user_id: Uuid, realm_id: Uuid) -> UserSession {
         UserSession {
+            auth_evidence: None,
             id: Uuid::now_v7(),
             user_id,
             realm_id,

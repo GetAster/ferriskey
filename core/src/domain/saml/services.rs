@@ -792,6 +792,8 @@ pub(crate) mod tests {
 
     pub(crate) fn saml_auth_session(recorded_request_id: Option<String>) -> AuthSession {
         AuthSession {
+            auth_evidence: None,
+            auth_requirements: None,
             id: Uuid::new_v4(),
             realm_id: RealmId::default(),
             client_id: Uuid::new_v4(),

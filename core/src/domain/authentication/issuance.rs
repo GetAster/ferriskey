@@ -80,6 +80,7 @@ const PROTECTED_CLAIMS: &[&str] = &[
     "nonce",
     "acr",
     "amr",
+    "aster_auth",
     "act",
     "may_act",
     "realm_access",
@@ -136,6 +137,7 @@ fn merge_claims(
         "nonce",
         "acr",
         "amr",
+        "aster_auth",
     ] {
         if mapped.contains_key(name) {
             return Err(IssueAccessTokenError::ClaimsCollision(name.to_string()));

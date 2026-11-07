@@ -44,6 +44,7 @@ impl ValidationError {
 pub struct ApiErrorBody {
     pub message: Cow<'static, str>,
     pub reason: Option<&'static str>,
+    pub redirect_url: Option<String>,
 }
 
 impl ApiErrorBody {
@@ -51,6 +52,7 @@ impl ApiErrorBody {
         Self {
             message: message.into(),
             reason: Some(reason),
+            redirect_url: None,
         }
     }
 
@@ -70,6 +72,7 @@ impl From<Cow<'static, str>> for ApiErrorBody {
         Self {
             message,
             reason: None,
+            redirect_url: None,
         }
     }
 }
@@ -79,6 +82,7 @@ impl From<&'static str> for ApiErrorBody {
         Self {
             message: Cow::Borrowed(message),
             reason: None,
+            redirect_url: None,
         }
     }
 }
@@ -88,6 +92,7 @@ impl From<String> for ApiErrorBody {
         Self {
             message: Cow::Owned(message),
             reason: None,
+            redirect_url: None,
         }
     }
 }
@@ -368,6 +373,8 @@ pub struct ApiErrorResponse {
     pub code: String,
     pub status: u16,
     pub reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_url: Option<String>,
     pub message: String,
 }
 
@@ -457,6 +464,7 @@ impl IntoResponse for ApiError {
                 ApiErrorBody {
                     message: format!("Internal Server Error: {}", body.message).into(),
                     reason: body.reason,
+                    redirect_url: body.redirect_url,
                 },
             ),
             ApiError::NotFound(body) => (StatusCode::NOT_FOUND, "E_NOT_FOUND", "not_found", body),
@@ -488,6 +496,7 @@ impl IntoResponse for ApiError {
                 code: code.to_string(),
                 status: status.as_u16(),
                 reason: body.reason.unwrap_or(default_reason).to_string(),
+                redirect_url: body.redirect_url,
                 message: body.message.into_owned(),
             }),
         )

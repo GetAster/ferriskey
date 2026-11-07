@@ -92,6 +92,9 @@ pub async fn broker_callback(
             );
             return Ok((StatusCode::FOUND, [(LOCATION, login_url)]).into_response());
         }
+        Err(CoreError::UnmetAuthenticationRequirements { redirect_url }) => {
+            return Ok((StatusCode::FOUND, [(LOCATION, redirect_url)]).into_response());
+        }
         Err(e) => return Err(e.into()),
     };
 
