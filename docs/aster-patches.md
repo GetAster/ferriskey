@@ -67,6 +67,10 @@ Row 11 is published on the patched branch at `01aa97d11c24b67cc05db994a76e2433a6
 
 Row 12 is published at `0f79b498cfe187db9ed6177e4037d2a00b890212`, released as `aster-ferriskey-v0.10.2-5` after exact-revision aster-idp validation: 154 passed, zero failed, two ignored across 17 binaries (exit 0). Validation: core 1,155 passed (174 ignored), API-core 130, domain 211, frontend 26 and TypeScript build passed. Independent backend and frontend review findings were addressed. No new route, schema or configuration key. HTTP 401 reasons distinguish `unknown_user`, `unknown_credential`, `credential_counter_regression`, and `webauthn_invalid_assertion`; existing challenge and transaction reasons remain. The console must be rebuilt with this release. In-flight old session-storage PKCE flows require a fresh login; new records are state-scoped, expire after ten minutes and are removed on read. Cross-tab browser storage consumption is not atomic; server code consumption remains authoritative. Full new-tab email-link completion into the console is pending deployment verification.
 
+| 13 | `fix/console-login-loading-v0.10.2` | Redirect known empty protected console sessions before React mounts the dark loading screen; preserve public authentication, callbacks, stored sessions and pending hydration. Theme preferences tolerate unavailable storage. Based on row 12 integrated `0f79b498`; topic `727dc132`, integrated `96310738`. | Not submitted. |
+
+Row 13 candidate `9631073846ea24cc2b1f107abc9d49a239778b02` is published, awaiting exact-revision aster-idp validation before tagging. Validation: 19 targeted frontend tests, TypeScript build and independent review passed. No Rust, schema, endpoint or configuration changes. The initial decision reuses the existing auth store and full-document login helper; it runs before React mounts, not before the browser's initial HTML paint. Deployed visual verification remains pending.
+
 Planned patches are not listed here until they land.
 
 ## Development browser verification for release -3
