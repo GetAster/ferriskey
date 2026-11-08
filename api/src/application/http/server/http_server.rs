@@ -3,7 +3,6 @@ use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::application::http::server::app_state::AppState;
-use crate::application::http::server::openapi::ApiDoc;
 use crate::args::Args;
 use ferriskey_api_abyss::routes::abyss_routes;
 use ferriskey_api_account::router::account_routes;
@@ -42,11 +41,6 @@ use ferriskey_core::application::create_service_with_secrets;
 use ferriskey_core::domain::common::FerriskeyConfig;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{debug, info_span};
-use utoipa::OpenApi;
-use utoipa_rapidoc::RapiDoc;
-use utoipa_redoc::{Redoc, Servable};
-use utoipa_scalar::{Scalar, Servable as ScalarServable};
-use utoipa_swagger_ui::SwaggerUi;
 
 const PREFLIGHT_MAX_AGE: Duration = Duration::from_secs(600);
 
@@ -63,38 +57,6 @@ pub async fn state(args: Arc<Args>) -> Result<AppState, anyhow::Error> {
         create_service_with_secrets(ferriskey_config, &args.secrets_encryption_keys).await?;
 
     Ok(AppState::new(args, service))
-}
-
-/// Public documentation is independent of OAuth/OIDC discovery.
-fn documentation_routes<S: Clone + Send + Sync + 'static>(
-    root_path: &str,
-    enabled: bool,
-) -> Router<S> {
-    if !enabled {
-        return Router::new();
-    }
-    let mut openapi = ApiDoc::openapi();
-    let mut paths = openapi.paths.clone();
-    paths.paths = openapi
-        .paths
-        .paths
-        .into_iter()
-        .map(|(path, item)| (format!("{}{path}", root_path), item))
-        .collect();
-    openapi.paths = paths;
-
-    let api_docs_url = format!("{}/api-docs/openapi.json", root_path);
-    axum::Router::new()
-        .merge(Scalar::with_url(
-            format!("{}/scalar", root_path),
-            openapi.clone(),
-        ))
-        .merge(
-            SwaggerUi::new(format!("{}/swagger-ui", root_path))
-                .url(api_docs_url.clone(), openapi.clone()),
-        )
-        .merge(Redoc::with_url(format!("{}/redoc", root_path), openapi))
-        .merge(RapiDoc::new(api_docs_url).path(format!("{}/rapidoc", root_path)))
 }
 
 ///  Returns the [`Router`] of this application.
@@ -172,7 +134,7 @@ pub fn router_with_metrics(
 
     let root_path = state.args.server.root_path.clone();
     let authz_enabled = state.args.authz_enabled;
-    let router = documentation_routes(&root_path, state.args.server.api_docs_enabled)
+    let router = Router::new()
         .route(&format!("{}/config", root_path), get(get_config))
         .merge(realm_routes(state.clone()))
         .merge(client_routes(state.clone()))
@@ -219,50 +181,4 @@ pub fn router_with_metrics(
         router
     };
     Ok(router)
-}
-
-#[cfg(test)]
-mod documentation_tests {
-    use super::documentation_routes;
-    use crate::args::Args;
-    use axum_test::TestServer;
-    use clap::Parser;
-
-    #[tokio::test]
-    async fn documentation_switch_removes_every_viewer_and_schema_at_any_root() {
-        for root in ["", "/api"] {
-            for enabled in [false, true] {
-                let server = TestServer::new(documentation_routes::<()>(root, enabled)).unwrap();
-                for path in [
-                    "/api-docs/openapi.json",
-                    "/swagger-ui/",
-                    "/scalar",
-                    "/redoc",
-                    "/rapidoc",
-                ] {
-                    let response = server.get(&format!("{root}{path}")).await;
-                    if enabled {
-                        response.assert_status_ok();
-                    } else {
-                        response.assert_status_not_found();
-                    }
-                }
-                if enabled {
-                    let response = server.get(&format!("{root}/api-docs/openapi.json")).await;
-                    let spec = response.json::<serde_json::Value>();
-                    let paths = spec["paths"].as_object().unwrap();
-                    assert!(!paths.is_empty());
-                    assert!(paths.keys().all(|path| path.starts_with(root)));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn documentation_switch_accepts_explicit_false_and_defaults_to_enabled() {
-        assert!(Args::default().server.api_docs_enabled);
-        let args = Args::try_parse_from(["test", "--server-api-docs-enabled=false"]).unwrap();
-        assert!(!args.server.api_docs_enabled);
-        assert!(Args::try_parse_from(["test", "--server-api-docs-enabled=invalid"]).is_err());
-    }
 }

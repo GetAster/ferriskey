@@ -230,10 +230,12 @@ mod tests {
         let login_body: Value = login_settings.json();
         assert_eq!(login_body["theme"]["colors"]["primaryButton"], "#222222");
 
-        // --- OpenAPI exposes the admin endpoint.
-        let openapi_response = server.get("/api-docs/openapi.json").await;
-        assert_eq!(openapi_response.status_code(), 200);
-        let openapi_body: Value = openapi_response.json();
+        // --- Offline OpenAPI export describes the admin endpoint.
+        use utoipa::OpenApi;
+        let openapi_body = serde_json::to_value(
+            ferriskey_api::application::http::server::openapi::ApiDoc::openapi(),
+        )
+        .unwrap();
         let paths = &openapi_body["paths"];
         assert!(paths["/realms/{realm_name}/portal/theme"].is_object());
 

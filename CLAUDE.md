@@ -278,7 +278,7 @@ LOG_LEVEL=info
 - **Metrics:** Prometheus endpoint at `/metrics` (via `axum-prometheus`)
 - **Tracing:** Structured logging with `tracing` crate
 - **OpenTelemetry:** Optional OTLP integration for distributed tracing
-- **OpenAPI Docs:** Available at `/swagger-ui`, `/redoc`, `/rapidoc`, `/scalar`
+- **OpenAPI Docs:** Export offline with `ferriskey-api gen-api --output openapi.json`. The Aster fork does not serve documentation viewers or an OpenAPI JSON endpoint.
 
 ## Common Patterns
 
