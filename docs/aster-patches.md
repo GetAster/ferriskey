@@ -17,7 +17,13 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-`aster-ferriskey-v0.10.2-8` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `a53a5e0438474bd6591f149d469f1707714e3f52`. Adds Microsoft tenant-independent broker validation (row 16). Before tagging, the deployment agent reported `cargo test --all-features` passing against this exact pin, including six real embedded-provider database tests. Fork validation: 52 broker tests and independent review passed. Deployment and real Microsoft sign-in remain pending.
+`aster-ferriskey-v0.10.2-11` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9b6d633706828f5ad4777d6bf03d056f5ca3b869`. Preserves the saved authorization transaction during provider login (row 22), including all earlier authentication changes. Exact-pin host validation: 166 passed, zero failed, two ignored; fork validation: 57 broker unit tests and two actual-router PostgreSQL regressions passed, with independent review. The deployment agent confirmed real Microsoft email-confirmed linking, Google automatic linking, and real Apple Hide My Email sign-in. See the dated verification records below. Apple server-to-server notifications remain log-only.
+
+Previous release: `aster-ferriskey-v0.10.2-10` at `f6b857789b2d8f7be4c102927c66e921694bc1d1`: authentication evidence, requirements and provider connection confirmation; exact-pin host validation 163 passed, zero failed, two ignored. Release 11 fixes its cookie-resumed broker transaction regression.
+
+Earlier release: `aster-ferriskey-v0.10.2-9` at `9ae1243dafcb8ab43951c5491366e71c88e287d9`: Apple broker and shared email limits; exact-pin host validation 162 passed, zero failed, two ignored.
+
+Earlier release: `aster-ferriskey-v0.10.2-8` at `a53a5e0438474bd6591f149d469f1707714e3f52`: Microsoft tenant-independent broker validation; exact-pin host validation 162 passed, zero failed, two ignored.
 
 Previous release: `aster-ferriskey-v0.10.2-7` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `54e4f20d7b98a650ea407e3dbaea96d2ae4eacd8`. This release adds host administrative admission and portal continuation repairs (rows 14–15). Before tagging, aster-idp with the host admission hook wired passed 155 tests against this exact revision across 17 binaries (zero failed, two ignored, exit 0), including database-backed suites. The final host-source rerun also passed 155 tests (zero failed, two ignored) and Clippy was clean. The disposable integration database was removed after the rerun. The deployment agent reports this release live with rebuilt console in aster-idp `1e46dba`, image `sha256:761b4c2953d7cfcfac7c4b7e46521150b8969c000f1f21f635e1e94aab2f75ca`. Readiness returned 200. Live checks confirmed a realm-aster service-account token receives 403 `admin_admission_denied` on user administration (and 403 on clients), while a master administrator lists aster users successfully through the API and console. The temporary test client was deleted. Public passkey/error journeys passed; email/device portal continuation was not exercised live because realm aster's console client is disabled. Static console HTML can still load at direct URLs; the hook enforces administrative API admission.
 
@@ -34,7 +40,10 @@ Earlier release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, pub
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
-| `aster-ferriskey-v0.10.2-8` | `a53a5e04` | Deployment pending. |
+| `aster-ferriskey-v0.10.2-11` | `9b6d6337` | Deployed in aster-idp; image digest not recorded here. Live provider journeys verified below. |
+| `aster-ferriskey-v0.10.2-10` | `f6b85778` | Deployed in aster-idp `7284907`; image digest not recorded here. |
+| `aster-ferriskey-v0.10.2-9` | `9ae1243d` | Included in deployed release 10. |
+| `aster-ferriskey-v0.10.2-8` | `a53a5e04` | Included in deployed releases 10 and 11. |
 | `aster-ferriskey-v0.10.2-7` | `54e4f20d` | aster-idp `1e46dba`: `sha256:761b4c2953d7cfcfac7c4b7e46521150b8969c000f1f21f635e1e94aab2f75ca`. |
 | `aster-ferriskey-v0.10.2-6` | `96310738` | aster-idp `3e63259`: `sha256:30738da4369f137b00949abc449b9cabcd19fde1a8dd336be6fe34217a52cf56`. |
 | `aster-ferriskey-v0.10.2-5` | `0f79b498` | aster-idp `4c4694c`: `sha256:b4d249c51d23afa6881373d7300f2c77c45371d4d7be104a8dbdda3b4c306086`. |
@@ -173,8 +182,19 @@ release 11. Diagnostics reported `email_verified_present=false` and
 connected Microsoft to the existing account at 23:12 UTC on 2026-11-07. The agent
 also confirmed Google had automatically linked the same account at 20:34 UTC.
 This closes the previously pending real Microsoft and end-to-end connection
-confirmation checks. Real Apple sign-in remains unverified.
+confirmation checks. Apple sign-in was still unverified at this point; see the subsequent verification below.
 
 A separate `client_not_found` was traced to the host login screen opening without
 an authorization transaction and fixed in aster-idp `f5a352a`; it was not a further
 Ferriskey broker defect.
+
+## Real Apple sign-in verification — 2026-11-08
+
+The deployment agent confirmed the owner's real Apple ID sign-in with Hide My
+Email on release 11 at 08:56 UTC. Diagnostics reported
+`email_verified_present=true` and `branch=new_user`. The relay address matched
+no existing account, so a separate account was created; this does not establish
+linking between accounts with different addresses. Evidence is recorded in
+`portal_infra/FERRISKEY.md` at `172f0cd` and internal decision AID-047 at
+`271e7ab`. Apple server-to-server notifications still only log and acknowledge
+events; verification and processing remain a host follow-up.
