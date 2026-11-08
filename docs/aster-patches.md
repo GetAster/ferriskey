@@ -248,3 +248,9 @@ Validation: all-target API compile check and `cargo deny --locked check` passed.
 Hosts must remove `args.server.api_docs_enabled` assignments and obsolete `SERVER_API_DOCS_ENABLED`/CLI configuration, regenerate their own lockfile, and verify their fallback does not serve documentation. Upstream `main` retains upstream code; this removal is on the maintained patched upgrade branch.
 
 Surface changes: removed five documentation routes, four direct dependencies and one configuration field/CLI/environment option. No new endpoint, migration, service or credential.
+
+### Host verification update
+
+The host agent reported a passing gate for the preceding exact fork revision `898dcecff62800dc2925c401c6639557eebb37d9` in pushed aster-idp commit `8349902`: all-target/all-feature Clippy clean and 169 tests passed with ignored tests included, including both PostgreSQL embedding/startup smoke tests and the pending-registration migration. Host browser-handoff screens were previewed at desktop and mobile widths with clipboard success and denial. This is host-agent evidence, not live deployment verification.
+
+Release 13 is to include `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0`, including documentation removal. The host agent has been asked to rerun the gate at that exact revision before tagging; the older successful gate does not cover the removal. Live sign-in journeys remain pending deployment. A real unverified-email provider journey remains constrained by the Microsoft tenant rejection; automated PostgreSQL coverage is not represented as a live-provider result.
