@@ -9,3 +9,4 @@
 
 openapi.json
 /tools/pnpm/node_modules
+/agent.ax.toml
