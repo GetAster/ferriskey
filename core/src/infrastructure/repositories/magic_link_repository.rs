@@ -215,6 +215,30 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
                 "UPDATE users SET firstname=COALESCE(firstname,$2), lastname=COALESCE(lastname,$3) WHERE id=$1",
                 [target_user_id.into(), intent.given_name.into(), intent.family_name.into()]))
                 .await.map_err(|_| CoreError::InternalServerError)?;
+        } else if user_id.is_none() {
+            // The ordinary email registration proof has no account yet. Keep
+            // account creation, session binding and proof consumption atomic.
+            let Some(session_id) = link.auth_session_code else {
+                return Ok(None);
+            };
+            let valid = tx.query_one(Statement::from_sql_and_values(DbBackend::Postgres,
+                "SELECT s.realm_id FROM realm_settings s JOIN auth_sessions a ON a.id=$1 AND a.realm_id=s.realm_id WHERE s.realm_id=$2 AND s.passwordless_enabled=true AND s.user_registration_enabled=true AND s.magic_link_enabled=true AND a.expires_at>now() AND a.authenticated=false AND a.code IS NULL AND a.user_id IS NULL FOR SHARE OF s",
+                [session_id.into(), link.realm_id.into()]))
+                .await.map_err(|_| CoreError::InternalServerError)?;
+            if valid.is_none() {
+                return Ok(None);
+            }
+            let new_user_id = generate_uuid_v7();
+            // Do not turn a pending registration into a login to an account
+            // created meanwhile. A fresh link resolves that account explicitly.
+            let inserted = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
+                "INSERT INTO users (id,realm_id,username,email,email_verified,enabled,created_at,updated_at) VALUES ($1,$2,$3,$3,true,true,now(),now()) ON CONFLICT DO NOTHING",
+                [new_user_id.into(), link.realm_id.into(), email.clone().into()]))
+                .await.map_err(|_| CoreError::InternalServerError)?;
+            if inserted.rows_affected() != 1 {
+                return Ok(None);
+            }
+            user_id = Some(new_user_id);
         }
         let Some(target_user_id) = user_id else {
             return Ok(None);
