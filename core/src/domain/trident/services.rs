@@ -2657,7 +2657,7 @@ where
             warn!(
                 "Magic link opened by a browser that does not hold the session it was requested from"
             );
-            return Err(CoreError::InvalidMagicLink);
+            return Err(CoreError::MagicLinkBrowserMismatch);
         }
 
         // Fetch the auth session
@@ -7901,7 +7901,7 @@ mod tests {
                 .await;
 
             assert!(
-                matches!(result, Err(CoreError::InvalidMagicLink)),
+                matches!(result, Err(CoreError::MagicLinkBrowserMismatch)),
                 "a link opened by a browser that did not request it must not log in: {result:?}"
             );
         }

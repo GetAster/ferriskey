@@ -135,3 +135,5 @@ webhook_delivery_not_replayable: 该 Webhook 投递仍在进行中，无法重�
 webhook_forbidden: 您无权操作此 Webhook。
 webhook_not_found: 未找到该 Webhook。
 webhook_realm_not_found: 未找到该 Webhook 所属的域。
+
+magic_link_browser_mismatch: 复制此链接，并将其粘贴到发起登录的浏览器中。此链接尚未被使用。

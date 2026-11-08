@@ -115,3 +115,5 @@ webhook_delivery_not_replayable: This webhook delivery is still in flight and ca
 webhook_forbidden: You are not allowed to act on this webhook.
 webhook_not_found: This webhook could not be found.
 webhook_realm_not_found: The realm for this webhook could not be found.
+
+magic_link_browser_mismatch: Copy this link and paste it into the browser where you started signing in. Your link has not been used.

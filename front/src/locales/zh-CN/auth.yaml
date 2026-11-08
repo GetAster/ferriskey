@@ -77,6 +77,13 @@ magic_link:
     description: 我们已将魔法链接发送到您的邮箱地址。点击该链接即可登录，无需密码。
     hint: 该链接将在 15 分钟后失效。如果没有看到邮件，请检查垃圾邮件文件夹。
   verify:
+    browser_title: 返回发起登录的浏览器
+    browser_instructions: 复制此链接，并将其粘贴到发起登录的浏览器中。
+    link_label: 登录链接
+    copy_link: 复制登录链接
+    link_copied: 链接已复制。
+    copy_failed: 无法自动复制。请选中并复制上方链接。
+    not_requested: 如果您没有发起此请求，请关闭此页面。
     checking: 正在验证您的魔法链接…
     invalid: 此魔法链接无效或已过期。
     missing_params: 缺少魔法链接参数。

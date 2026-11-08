@@ -256,6 +256,9 @@ impl From<CoreError> for ApiError {
             CoreError::InvalidMagicLink => {
                 Self::Unauthorized("Invalid magic link token".into())
             }
+            CoreError::MagicLinkBrowserMismatch => {
+                Self::BadRequest("Open this link in the browser where you started signing in".into())
+            }
             CoreError::MagicLinkExpired => {
                 Self::Unauthorized("Magic link has expired".into())
             }
