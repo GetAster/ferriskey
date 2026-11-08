@@ -287,6 +287,9 @@ pub enum CoreError {
     #[error("Invalid magic link token")]
     InvalidMagicLink,
 
+    #[error("Open this link in the browser where you started signing in")]
+    MagicLinkBrowserMismatch,
+
     #[error("Magic link has expired")]
     MagicLinkExpired,
 
@@ -574,6 +577,7 @@ impl CoreError {
             CoreError::WebAuthnInvalidAssertion => "webauthn_invalid_assertion",
             CoreError::MagicLinkNotEnabled => "magic_link_not_enabled",
             CoreError::InvalidMagicLink => "invalid_magic_link",
+            CoreError::MagicLinkBrowserMismatch => "magic_link_browser_mismatch",
             CoreError::MagicLinkExpired => "magic_link_expired",
             CoreError::MagicLinkAlreadyUsed => "magic_link_already_used",
             CoreError::ProviderNotFound => "provider_not_found",
@@ -872,6 +876,10 @@ mod tests {
             ),
             (CoreError::MagicLinkNotEnabled, "magic_link_not_enabled"),
             (CoreError::InvalidMagicLink, "invalid_magic_link"),
+            (
+                CoreError::MagicLinkBrowserMismatch,
+                "magic_link_browser_mismatch",
+            ),
             (CoreError::MagicLinkExpired, "magic_link_expired"),
             (CoreError::MagicLinkAlreadyUsed, "magic_link_already_used"),
             (CoreError::ProviderNotFound, "provider_not_found"),

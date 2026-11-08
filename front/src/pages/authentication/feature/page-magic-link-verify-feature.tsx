@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useParams, useNavigate } from 'react-router'
 import { useVerifyMagicLink } from '@/api/trident.api'
-import { apiErrorMessage } from '@/lib/api-error'
+import { apiErrorMessage, apiErrorReason } from '@/lib/api-error'
 import PageMagicLinkVerify from '../ui/page-magic-link-verify'
 import { AUTH_NAMESPACE } from '../constants'
 import { continueLogin } from '../utils/continue-login'
 
-type VerifyStatus = 'loading' | 'error'
+type VerifyStatus = 'loading' | 'error' | 'browser_mismatch'
 
 export default function PageMagicLinkVerifyFeature() {
   const { realm_name } = useParams()
@@ -41,7 +41,11 @@ export default function PageMagicLinkVerifyFeature() {
     })
       .then((data) => {
         if (data.url || data.required_actions?.length) {
-          continueLogin({ url: data.url, required_actions: data.required_actions ?? [] }, navigate, realm)
+          continueLogin(
+            { url: data.url, required_actions: data.required_actions ?? [] },
+            navigate,
+            realm
+          )
         } else if (data.status === 'RequiresOtpChallenge') {
           navigate(`/realms/${realm}/authentication/otp`)
         } else {
@@ -50,10 +54,20 @@ export default function PageMagicLinkVerifyFeature() {
         }
       })
       .catch((err: Error) => {
+        if (apiErrorReason(err) === 'magic_link_browser_mismatch') {
+          setStatus('browser_mismatch')
+          return
+        }
         setErrorMessage(apiErrorMessage(err, t('magic_link.verify.failed')))
         setStatus('error')
       })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <PageMagicLinkVerify status={status} errorMessage={errorMessage} />
+  return (
+    <PageMagicLinkVerify
+      status={status}
+      errorMessage={errorMessage}
+      signInUrl={window.location.href}
+    />
+  )
 }

@@ -60,6 +60,13 @@ magic_link:
     description: We sent a magic link to your email address. Click the link to sign in — no password needed.
     hint: The link expires in 15 minutes. Check your spam folder if you don't see it.
   verify:
+    browser_title: Return to your sign-in browser
+    browser_instructions: Copy this link and paste it into the browser where you started signing in.
+    link_label: Sign-in link
+    copy_link: Copy sign-in link
+    link_copied: Link copied.
+    copy_failed: Could not copy automatically. Select and copy the link above.
+    not_requested: If you didn’t start this request, close this page.
     checking: Verifying your magic link...
     invalid: This magic link is invalid or has expired.
     missing_params: Missing magic link parameters.

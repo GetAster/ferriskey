@@ -105,7 +105,18 @@ fn provider_link_requires_same_browser_and_consumes_once_before_login() {
             .add_query_param("token_id", f.token.to_string())
             .add_query_param("magic_token", &f.raw)
             .await;
-        assert!(!wrong.status_code().is_success());
+        assert_eq!(wrong.status_code(), 400);
+        assert_eq!(
+            wrong.json::<serde_json::Value>()["reason"],
+            "magic_link_browser_mismatch"
+        );
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM magic_links WHERE token_id=$1")
+                .bind(f.token)
+                .fetch_one(&app.pool)
+                .await
+                .unwrap();
+        assert_eq!(remaining, 1, "wrong browser must leave the proof usable");
         assert_eq!(links(&f).await, 0);
         let cookie = format!("FERRISKEY_SESSION={}", f.session);
         let verified = server

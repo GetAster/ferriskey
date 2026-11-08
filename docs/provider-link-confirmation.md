@@ -47,3 +47,18 @@ declining does not unlink the account.
 
 New surface: one nullable database column and one decline endpoint. No new realm
 setting, persisted required-action enum, OAuth client, or secret is introduced.
+
+## Opening the email in another browser
+
+Verification returns HTTP 400 with `reason: magic_link_browser_mismatch` when
+`FERRISKEY_SESSION` is missing or does not match the initiating transaction.
+This check precedes token consumption and does not modify the account or session.
+It is not an assertion that the token is otherwise valid or unexpired.
+
+Render the original email-page URL in a read-only selectable field and provide
+**Copy sign-in link**. Tell the person to paste it into the browser where they
+started signing in, and to close the page if they did not initiate the request.
+Clipboard failures must permit manual copying. Do not put the browser session
+cookie into the URL, restore it from the URL, or start a replacement transaction.
+The original browser must still hold its independently established session cookie.
+Use a no-referrer policy for pages containing email proofs.
