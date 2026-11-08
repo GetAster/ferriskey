@@ -234,3 +234,17 @@ Migration `20261108200000_pending_provider_registration` makes the existing `mag
 The host owns its branded copy-link screen, email wording, exact-pin tests and live verification. Wrong-browser requests do not consume proofs or change account state. Expired/used links remain subject to normal validation when presented in the original browser. Existing accounts created under the old behavior require a separate exposure assessment; this patch does not unlink them. Recovery, mandatory passkeys after enrollment and phishing-report actions remain deferred. See `docs/provider-link-confirmation.md` on the patched branch for the complete contract.
 
 Surface changes: one existing column becomes nullable; one error reason. No new endpoint, configuration setting, service or credential type.
+
+## Remove public documentation surfaces — 2026-11-08
+
+| # | Topic branch | Summary | Upstream status |
+| --- | --- | --- | --- |
+| 26 | `fix/remove-api-documentation-surfaces` | Remove Swagger UI, Scalar, Redoc, RapiDoc and runtime OpenAPI JSON routes, their four viewer dependencies and ZIP transitive dependency. Remove the temporary documentation switch and ZIP advisory exceptions. Retain offline OpenAPI export and OAuth/OIDC discovery/JWKS. Topic `93890c90`; integrated `19f1ffe7`. | Not submitted. |
+
+Candidate `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0` supersedes `898dcecf` and retains both registration confirmation and browser-handoff changes. Published without a new tag pending exact-pin host validation. This supersedes row 23's documentation switch and vendored-ZIP mitigation; the existing immutable release-12 tag is unchanged.
+
+Validation: all-target API compile check and `cargo deny --locked check` passed. The actual embedded-router PostgreSQL test passed with 404 assertions for all removed documentation paths and successful OIDC discovery. The offline token-exchange OpenAPI schema test and actual `gen-api --output` export passed. Independent review and whitespace checks passed. The disposable test database was removed.
+
+Hosts must remove `args.server.api_docs_enabled` assignments and obsolete `SERVER_API_DOCS_ENABLED`/CLI configuration, regenerate their own lockfile, and verify their fallback does not serve documentation. Upstream `main` retains upstream code; this removal is on the maintained patched upgrade branch.
+
+Surface changes: removed five documentation routes, four direct dependencies and one configuration field/CLI/environment option. No new endpoint, migration, service or credential.
