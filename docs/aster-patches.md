@@ -6,7 +6,7 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Branch and tag model
 
-- `main` is upstream `main` plus the Aster README preamble, this ledger, the removal of `.github/dependabot.yml` (Dependabot would open PRs on the mirror and spend our GitHub allowance; Actions are also off on Forge and GitHub) and the rust-dev house-rule build changes (dev/test debug info capped at zero; one integration-test binary per crate, so upstream's new `api/tests/*.rs` files are moved into `api/tests/it/` when merged). Nothing is built from `main`. It is refreshed with `git merge upstream/main` and is never reset or force-pushed. Ledger edits are commits on `main`, never on `upgrade/*`.
+- `main` is upstream `main` plus the Aster README preamble, this ledger, the removal of `.github/dependabot.yml` (Dependabot would open PRs on the mirror and spend our GitHub allowance; GitHub Actions remain off; Forgejo Actions were enabled on 2026-11-08 for the dependency workflow) the Forgejo dependency workflow and targeted dependency maintenance, and the rust-dev house-rule build changes (dev/test debug info capped at zero; one integration-test binary per crate, so upstream's new `api/tests/*.rs` files are moved into `api/tests/it/` when merged). Nothing is built from `main`. It is refreshed with `git merge upstream/main` and is never reset or force-pushed. Ledger edits are commits on `main`, never on `upgrade/*`.
 - The current patched line is `upgrade/ferriskey-v0.10.2`: the upstream release tag `v0.10.2` plus the patches in this ledger. The line follows upstream release tags only: for each new release `upgrade/ferriskey-v<upstream version>` is cut from the tag and the patches are cherry-picked onto it. Aster-only fixes append to the current branch. Published `upgrade/*` branches and tags are never rewritten.
 - `upgrade/ferriskey-main-9a7d5d8c` was the line before it: upstream `main` at the pinned commit `9a7d5d8c`, chosen by owner decision (2026-10-25) because the changes this fork needs (sealed realm keys, signing-key cache, aws-lc-rs signing) had landed after `v0.9.0`. It was superseded on 2026-11-05 by the `v0.10.2` line, is left unchanged and was never tagged. Its topic branches (`feat/eddsa-signing-main`, `feat/confirmation-claim`, `feat/asserted-actor`, `feat/signing-key-rotation`, `feat/realm-org-root`) are kept as they are.
 - `upgrade/ferriskey-v0.9.0` was published on Forge before that decision. It is superseded, left unchanged and carries no patches.
@@ -16,6 +16,8 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 - Aster does not submit patches upstream; upstream maintainers are welcome to take any patch here.
 
 ## Current release
+
+Published candidate: `aster-ferriskey-v0.10.2-12` at `122850250ddc6b4b1624cfa827b21fbcd36b4ba2` (2026-11-08), row 23 below. Fork tests and Forgejo checks passed. This tag was published before the exact-pin host gate, an exception to the required ordering above; host validation and production rollout are pending. The immutable tag will not be moved. Last confirmed deployed release remains 11.
 
 `aster-ferriskey-v0.10.2-11` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9b6d633706828f5ad4777d6bf03d056f5ca3b869`. Preserves the saved authorization transaction during provider login (row 22), including all earlier authentication changes. Exact-pin host validation: 166 passed, zero failed, two ignored; fork validation: 57 broker unit tests and two actual-router PostgreSQL regressions passed, with independent review. The deployment agent confirmed real Microsoft email-confirmed linking, Google automatic linking, and real Apple Hide My Email sign-in. See the dated verification records below. Apple server-to-server notifications remain log-only.
 
@@ -40,6 +42,7 @@ Earlier release: `aster-ferriskey-v0.10.2-2` on `upgrade/ferriskey-v0.10.2`, pub
 The previous `-1` tag was created on 2026-11-05 by owner decision before aster-idp tests existed; its unpublished local image IDs are retained below.
 | Tag | Commit | Image digest |
 | --- | --- | --- |
+| `aster-ferriskey-v0.10.2-12` | `12285025` | Published candidate; host validation and deployment pending. |
 | `aster-ferriskey-v0.10.2-11` | `9b6d6337` | Deployed in aster-idp; image digest not recorded here. Live provider journeys verified below. |
 | `aster-ferriskey-v0.10.2-10` | `f6b85778` | Deployed in aster-idp `7284907`; image digest not recorded here. |
 | `aster-ferriskey-v0.10.2-9` | `9ae1243d` | Included in deployed release 10. |
@@ -198,3 +201,17 @@ linking between accounts with different addresses. Evidence is recorded in
 `portal_infra/FERRISKEY.md` at `172f0cd` and internal decision AID-047 at
 `271e7ab`. Apple server-to-server notifications still only log and acknowledge
 events; verification and processing remain a host follow-up.
+
+## Production documentation switch and dependency checks — 2026-11-08
+
+| # | Topic branch | Summary | Upstream status |
+| --- | --- | --- | --- |
+| 23 | `feat/security-controls` | One `SERVER_API_DOCS_ENABLED` boolean (default true; embedded `args.server.api_docs_enabled`) removes OpenAPI JSON and all four documentation viewers when false. OAuth/OIDC discovery is unchanged. Forgejo push/weekly dependency policy, checksum-verified vendored Swagger archive, targeted Hyper update removing unmaintained pin-utils. Topic `9e84ff41`, integrated `12285025`. | Not submitted. |
+
+Released as candidate `aster-ferriskey-v0.10.2-12`. Validation: two route/configuration tests (enabled/disabled at empty and `/api` roots), 131 API-core tests, formatting and independent review passed. `cargo deny --locked check` passes advisories, licenses, bans and sources. Actual Forgejo push run [8](https://forge.emrul.dev/Aster/ferriskey/actions/runs/8) succeeded on the topic commit. Host validation and live ADMIN-03 verification remain pending; no claim of production disablement is made here.
+
+Repository Actions are now enabled. `.forgejo/workflows/security.yml` is also on `main` so its Monday 06:17 UTC schedule checks both `main` and the maintained upgrade branch. The first main run correctly failed on unmaintained `pin-utils`; the same targeted Hyper 1.12.0 / want 0.3.2 lock update removes it. No automatic update or deploy step is introduced.
+
+Release-11 dependency review found `rsa` (Marvin) and `rkyv` only in inactive optional lockfile entries, `crypto-bigint 0.5.5` only in test keys, and `zip 3` only in the Swagger build. The ZIP exception now uses the vendored crate checksum and inspection of all 1,097 archive entries; no privileged bits or symlinks. RustSec 0429 uses extraction functions Swagger does not call. Test-only crypto-bigint remains an explicit exception; its migration to P-256 0.14 is deferred. Details and reproduction commands are in `docs/security-controls.md` on the patched branch. Host-only zstd findings were handed to the host agent; the fork scan cannot cover the embedding host's independent lockfile.
+
+Surface change: one configuration field/CLI/environment option and one workflow; no endpoint, schema migration, service or credential. A host must set false explicitly and verify its own fallback does not serve documentation. The host must update its own Hyper lock entry because Git crate dependencies do not inherit this repository's lockfile.
