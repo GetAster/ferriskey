@@ -61,7 +61,7 @@ async fn provider() -> Provider {
     }
 }
 
-async fn journey(verified_email: bool) {
+async fn journey(verified_email: bool, existing_account: bool) {
     let local_app = app().sibling_with_local_provider().await;
     let app = &local_app;
     let server = app.server();
@@ -72,13 +72,20 @@ async fn journey(verified_email: bool) {
         .unwrap();
     let provider = provider().await;
     let user = app.user(&server, "Str0ng!P@ssword#2024").await;
-    let user_id: Uuid = user.id.parse().unwrap();
+    let mut user_id: Uuid = user.id.parse().unwrap();
     let email: String =
         sqlx::query_scalar("UPDATE users SET email_verified=true WHERE id=$1 RETURNING email")
             .bind(user_id)
             .fetch_one(&app.pool)
             .await
             .unwrap();
+    if !existing_account {
+        sqlx::query("DELETE FROM users WHERE id=$1")
+            .bind(user_id)
+            .execute(&app.pool)
+            .await
+            .unwrap();
+    }
     let alias = format!("resume-{}", Uuid::new_v4().simple());
     let provider_id = Uuid::new_v4();
     sqlx::query("INSERT INTO identity_providers (id,realm_id,alias,provider_id,trust_email,config) VALUES ($1,$2,$3,'oidc',$4,$5)")
@@ -132,6 +139,43 @@ async fn journey(verified_email: bool) {
         .await;
     assert_eq!(callback.status_code(), 302, "callback: {}", callback.text());
     let destination = callback.headers()["location"].to_str().unwrap();
+    if !existing_account && verified_email {
+        user_id = sqlx::query_scalar("SELECT id FROM users WHERE realm_id=$1 AND email=$2")
+            .bind(app.realm_id)
+            .bind(&email)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+    }
+    if !existing_account && !verified_email {
+        let accounts: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM users WHERE realm_id=$1 AND lower(email)=lower($2)",
+        )
+        .bind(app.realm_id)
+        .bind(&email)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            accounts, 0,
+            "unverified provider data must not reserve an account"
+        );
+        let links: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM identity_provider_links WHERE identity_provider_id=$1",
+        )
+        .bind(provider_id)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+        assert_eq!(links, 0, "no provider authority before email proof");
+        assert!(
+            callback
+                .cookies()
+                .iter()
+                .all(|cookie| cookie.name() == "FERRISKEY_SESSION"),
+            "no login-action or SSO cookie before proof"
+        );
+    }
     let linked: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM identity_provider_links WHERE identity_provider_id=$1 AND user_id=$2",
     )
@@ -182,7 +226,7 @@ async fn journey(verified_email: bool) {
         )
         .unwrap();
         assert_eq!(claims["nonce"], NONCE);
-        assert_eq!(claims["sub"], user.id);
+        assert_eq!(claims["sub"], user_id.to_string());
     } else {
         assert_eq!(linked, 0, "no link is created before email proof");
         assert!(
@@ -195,8 +239,8 @@ async fn journey(verified_email: bool) {
             .parse()
             .unwrap();
         assert_ne!(pending, original);
-        let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM magic_links WHERE auth_session_code=$1 AND user_id=$2 AND provider_link IS NOT NULL")
-            .bind(pending).bind(user_id).fetch_one(&app.pool).await.unwrap();
+        let proofs: i64 = sqlx::query_scalar("SELECT count(*) FROM magic_links WHERE auth_session_code=$1 AND user_id IS NOT DISTINCT FROM $2 AND provider_link IS NOT NULL")
+            .bind(pending).bind(existing_account.then_some(user_id)).fetch_one(&app.pool).await.unwrap();
         assert_eq!(
             proofs, 1,
             "one pending email confirmation is bound to the fresh transaction"
@@ -216,11 +260,23 @@ async fn journey(verified_email: bool) {
 #[test]
 #[ignore = "requires PostgreSQL"]
 fn cookie_resumed_provider_collision_preserves_nonce_and_pkce_for_confirmation() {
-    rt().block_on(journey(false));
+    rt().block_on(journey(false, true));
 }
 
 #[test]
 #[ignore = "requires PostgreSQL"]
 fn cookie_resumed_verified_provider_link_preserves_nonce_and_enforces_pkce_at_exchange() {
-    rt().block_on(journey(true));
+    rt().block_on(journey(true, true));
+}
+
+#[test]
+#[ignore = "requires PostgreSQL"]
+fn new_untrusted_provider_callback_sends_pending_proof_without_creating_user_or_link() {
+    rt().block_on(journey(false, false));
+}
+
+#[test]
+#[ignore = "requires PostgreSQL"]
+fn new_trusted_provider_callback_retains_immediate_verified_registration() {
+    rt().block_on(journey(true, false));
 }

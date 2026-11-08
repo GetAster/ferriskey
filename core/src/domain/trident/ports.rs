@@ -447,7 +447,7 @@ pub trait TridentService: Send + Sync {
 pub trait MagicLinkRepository: Send + Sync {
     fn create_magic_link(
         &self,
-        user_id: Uuid,
+        user_id: Option<Uuid>,
         realm_id: Uuid,
         magic_token_id: Uuid,
         magic_token_hash: &HashResult,
@@ -467,9 +467,12 @@ pub trait MagicLinkRepository: Send + Sync {
         magic_token_id: Uuid,
     ) -> impl Future<Output = Result<(), CoreError>> + Send;
 
-    /// Atomically consume a live link and verify only its original contact email.
-    fn consume(&self, magic_token_id: Uuid)
-    -> impl Future<Output = Result<bool, CoreError>> + Send;
+    /// Atomically consume a live proof, create/link its account when requested,
+    /// and return the committed user ID. None means no state change was committed.
+    fn consume(
+        &self,
+        magic_token_id: Uuid,
+    ) -> impl Future<Output = Result<Option<Uuid>, CoreError>> + Send;
 
     fn decline_provider_link(
         &self,

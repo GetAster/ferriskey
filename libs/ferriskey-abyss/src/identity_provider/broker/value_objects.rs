@@ -236,11 +236,15 @@ pub struct BrokerCallbackInput {
     pub user_agent: Option<String>,
 }
 
-/// Verified provider identity waiting for proof of the existing local address.
+/// Verified provider identity waiting for proof of a local address.
 /// This is internal server data, never accepted from a browser request.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct ProviderLinkIntent {
+    /// Existing user, or a reserved UUID for a user created only at redemption.
     pub user_id: Uuid,
+    /// Present only for first-time registration. No user row exists before proof.
+    #[serde(default)]
+    pub registration_username: Option<String>,
     pub provider_id: Uuid,
     pub provider_name: String,
     pub external_id: String,

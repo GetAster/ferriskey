@@ -47,3 +47,44 @@ declining does not unlink the account.
 
 New surface: one nullable database column and one decline endpoint. No new realm
 setting, persisted required-action enum, OAuth client, or secret is introduced.
+
+## New registrations with untrusted provider email
+
+A new provider identity can create an account immediately only when the provider
+has `trust_email=true` and its validated upstream identity reports `email_verified=true`.
+Missing/false verification, or a provider whose email we do not trust, uses the
+same confirmation screen and email proof as existing-account linking. A missing
+or blank email on a new provider identity is refused; an existing provider link
+continues to identify its already-linked account.
+
+Until the proof is redeemed, there is no user row, provider link, login-action
+token, authorization code or authenticated session for the new identity. The
+pending intent stores a reserved prospective user UUID, a registration username
+and display profile. The magic-link row has a null user foreign key. This does
+not reserve the email address: its real owner can register independently.
+
+After the existing browser, token and expiry checks, one database transaction
+creates the verified account, inserts its provider link, binds the browser
+transaction and consumes the proof. Case-insensitive email/username conflicts or
+an already-connected provider identity abort the whole transaction. No existing
+account is silently merged or overwritten: restart provider sign-in to obtain
+an explicit existing-account connection proof. Expiry, decline or failed
+confirmation leave no provisional account to clean up.
+
+This requires `magic_link_enabled`, the configured magic-link template and SMTP
+for the realm. Disabled delivery fails closed; it cannot fall back to trusting
+the provider email. The existing shared email limits apply before generating a
+proof, and pending-registration delivery events have no user actor. Connection
+emails name the provider and explicitly describe connecting it; they do not use
+the generic sign-in template.
+
+Migration `20261108200000_pending_provider_registration` makes
+`magic_links.user_id` nullable, retaining its foreign key. Old ordinary and
+provider-link proofs remain compatible. Rolling back discards only null-user
+pending-registration proofs before restoring the non-null requirement. The
+repository's `consume` now returns the committed user ID; callers must use it
+instead of assuming every pending proof already belongs to a user.
+
+This change prevents new unverified provider registrations. It does not unlink
+or otherwise remediate accounts created through the older behavior; assess those
+separately before making changes to existing account access.

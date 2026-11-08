@@ -231,3 +231,115 @@ fn a_connection_proof_binds_the_session_against_another_users_magic_link() {
         assert_eq!(bound,f.user);
     });
 }
+
+// New registrations use the same browser-bound proof without reserving a user.
+async fn registration_fixture() -> Fixture {
+    let f = fixture().await;
+    sqlx::query("UPDATE magic_links SET user_id=NULL, provider_link=provider_link || jsonb_build_object('registration_username',email) WHERE token_id=$1")
+        .bind(f.token).execute(&app().pool).await.unwrap();
+    sqlx::query("DELETE FROM users WHERE id=$1")
+        .bind(f.user)
+        .execute(&app().pool)
+        .await
+        .unwrap();
+    f
+}
+
+async fn registered(f: &Fixture) -> bool {
+    sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)")
+        .bind(f.user)
+        .fetch_one(&app().pool)
+        .await
+        .unwrap()
+}
+
+#[test]
+#[ignore = "requires PostgreSQL"]
+fn untrusted_provider_registration_creates_nothing_until_same_browser_proof() {
+    rt().block_on(async {
+        let f = registration_fixture().await;
+        assert!(!registered(&f).await);
+        assert_eq!(links(&f).await, 0);
+        let app = app();
+        let server = app.server();
+        let path = app.path("/login-actions/verify-magic-link");
+        let wrong = server
+            .get(&path)
+            .add_query_param("token_id", f.token.to_string())
+            .add_query_param("magic_token", &f.raw)
+            .await;
+        assert!(!wrong.status_code().is_success());
+        assert!(!registered(&f).await);
+        assert_eq!(links(&f).await, 0);
+        let still_pending: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM magic_links WHERE token_id=$1 AND user_id IS NULL)",
+        )
+        .bind(f.token)
+        .fetch_one(&app.pool)
+        .await
+        .unwrap();
+        assert!(still_pending);
+        assert!(redeem(&f).await);
+        assert!(registered(&f).await);
+        assert_eq!(links(&f).await, 1);
+        let verified: bool = sqlx::query_scalar("SELECT email_verified FROM users WHERE id=$1")
+            .bind(f.user)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap();
+        assert!(verified);
+        assert!(!redeem(&f).await);
+    });
+}
+
+#[test]
+#[ignore = "requires PostgreSQL"]
+fn registration_confirmation_refuses_races_and_invalid_authority_without_residual_users() {
+    rt().block_on(async {
+        for change in ["email_race", "username_race", "provider_link_race", "disabled_provider", "link_only", "expired", "session_expired", "decline"] {
+            let f = registration_fixture().await;
+            let pool = &app().pool;
+            match change {
+                "email_race" | "username_race" => {
+                    let email: String = sqlx::query_scalar("SELECT email FROM magic_links WHERE token_id=$1")
+                        .bind(f.token).fetch_one(pool).await.unwrap();
+                    let id = Uuid::new_v4();
+                    let (username, address) = if change == "email_race" {
+                        (id.to_string(), email.to_uppercase())
+                    } else { (email, format!("{id}@example.test")) };
+                    sqlx::query("INSERT INTO users (id,realm_id,username,email,email_verified,enabled) VALUES ($1,$2,$3,$4,true,true)")
+                        .bind(id).bind(app().realm_id).bind(username).bind(address).execute(pool).await.unwrap();
+                }
+                "provider_link_race" => {
+                    let other = fixture().await;
+                    sqlx::query("INSERT INTO identity_provider_links (id,user_id,identity_provider_id,identity_provider_user_id,identity_provider_username) VALUES ($1,$2,$3,'tenant:subject','already-linked')")
+                        .bind(Uuid::new_v4()).bind(other.user).bind(f.provider).execute(pool).await.unwrap();
+                }
+                "disabled_provider" => { sqlx::query("UPDATE identity_providers SET enabled=false WHERE id=$1").bind(f.provider).execute(pool).await.unwrap(); }
+                "link_only" => { sqlx::query("UPDATE identity_providers SET link_only=true WHERE id=$1").bind(f.provider).execute(pool).await.unwrap(); }
+                "expired" => { sqlx::query("UPDATE magic_links SET expires_at=now()-interval '1 hour' WHERE token_id=$1").bind(f.token).execute(pool).await.unwrap(); }
+                "session_expired" => { sqlx::query("UPDATE auth_sessions SET expires_at=now()-interval '1 hour' WHERE id=$1").bind(f.session).execute(pool).await.unwrap(); }
+                "decline" => { app().service.decline_provider_link(app().realm.clone(), f.session).await.unwrap(); }
+                _ => unreachable!(),
+            }
+            assert!(!redeem(&f).await, "{change}");
+            assert!(!registered(&f).await, "{change}");
+            assert_eq!(links(&f).await, if change == "provider_link_race" { 1 } else { 0 }, "{change}");
+            let user: Option<Uuid> = sqlx::query_scalar("SELECT user_id FROM auth_sessions WHERE id=$1")
+                .bind(f.session).fetch_one(pool).await.unwrap();
+            assert!(user.is_none(), "{change}");
+        }
+    });
+}
+
+#[test]
+#[ignore = "requires PostgreSQL"]
+fn concurrent_registration_redemptions_create_exactly_one_account_and_link() {
+    rt().block_on(async {
+        let f = registration_fixture().await;
+        let (a, b) = tokio::join!(redeem(&f), redeem(&f));
+        assert_eq!(usize::from(a) + usize::from(b), 1);
+        assert!(registered(&f).await);
+        assert_eq!(links(&f).await, 1);
+    });
+}
