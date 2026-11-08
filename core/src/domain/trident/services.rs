@@ -789,7 +789,7 @@ where
         &self,
         scope: &RealmScope,
         template_id: Uuid,
-        user: &crate::domain::user::entities::User,
+        user: Option<&crate::domain::user::entities::User>,
         user_agent: Option<&str>,
         extra_vars: &[(&str, &str)],
         fallback_subject: &str,
@@ -810,15 +810,15 @@ where
         let mut variables = std::collections::HashMap::new();
         variables.insert(
             "user.first_name".to_string(),
-            user.firstname.clone().unwrap_or_default(),
+            user.and_then(|u| u.firstname.clone()).unwrap_or_default(),
         );
         variables.insert(
             "user.last_name".to_string(),
-            user.lastname.clone().unwrap_or_default(),
+            user.and_then(|u| u.lastname.clone()).unwrap_or_default(),
         );
         variables.insert(
             "user.email".to_string(),
-            user.email.clone().unwrap_or_default(),
+            user.and_then(|u| u.email.clone()).unwrap_or_default(),
         );
         insert_request_variables(&mut variables, Utc::now(), user_agent);
         for (key, value) in extra_vars {
@@ -2329,7 +2329,7 @@ where
             return Err(CoreError::MagicLinkNotEnabled);
         }
 
-        let signup_session = if settings.passwordless_enabled {
+        if settings.passwordless_enabled {
             let code = input
                 .session_code
                 .as_deref()
@@ -2344,14 +2344,11 @@ where
             if session.expires_at <= Utc::now() || session.authenticated {
                 return Err(CoreError::InvalidSession);
             }
-            Some(code)
-        } else {
-            None
-        };
+        }
         let normalized_email =
             crate::domain::authentication::services::normalize_login_email(&input.email);
-        // Reserve before passwordless signup creates a user, and even for unknown
-        // recipients so throttling cannot disclose account existence.
+        // Reserve for both known and unknown recipients before issuing any proof,
+        // so throttling cannot disclose account existence.
         if let Err(limit) = self
             .email_limits
             .reserve(realm.id.into(), &normalized_email)
@@ -2372,39 +2369,27 @@ where
             // meanwhile. Restarting then asks for explicit existing-account linking.
             None
         } else {
-            Some(
-                match self
-                    .user_repository
-                    .get_by_email(&normalized_email, realm.id)
-                    .await
+            match self
+                .user_repository
+                .get_by_email(&normalized_email, realm.id)
+                .await
+            {
+                Ok(Some(user)) => Some(user),
+                Ok(None)
+                    if input.provider_link.is_none()
+                        && settings.passwordless_enabled
+                        && settings.user_registration_enabled =>
                 {
-                    Ok(Some(user)) => user,
-                    Ok(None)
-                        if input.provider_link.is_none()
-                            && settings.passwordless_enabled
-                            && settings.user_registration_enabled =>
-                    {
-                        self.user_repository
-                            .create_user(crate::domain::user::value_objects::CreateUserRequest {
-                                id: None,
-                                realm_id: realm.id,
-                                client_id: None,
-                                username: normalized_email.clone(),
-                                email: Some(normalized_email.clone()),
-                                firstname: None,
-                                lastname: None,
-                                email_verified: false,
-                                enabled: true,
-                            })
-                            .await?
-                    }
-                    Ok(None) => return Ok(()),
-                    Err(e) => {
-                        error!("Failed to look up user during magic link generation: {}", e);
-                        return Ok(());
-                    }
-                },
-            )
+                    // A null user and no provider intent records email registration.
+                    // Only redemption may create the account, after proof of control.
+                    None
+                }
+                Ok(None) => return Ok(()),
+                Err(e) => {
+                    error!("Failed to look up user during magic link generation: {}", e);
+                    return Ok(());
+                }
+            }
         };
         if user
             .as_ref()
@@ -2450,7 +2435,6 @@ where
             Some(user_id) => SecurityEvent::new(realm.id, kind, status, user_id),
             None => SecurityEvent::without_actor(realm.id, kind, status),
         };
-        let _ = signup_session;
         self.magic_link_repository
             .cleanup_expired(realm.id.into())
             .await?;
@@ -2514,7 +2498,7 @@ where
                     input.base_url, realm.name, magic_token_id, magic_token
                 );
                 let body = format!(
-                    "Click the link below to sign in:\n{magic_link_url}\n\nThis link expires in {ttl_minutes} minutes.\n\nIf you did not request this, please ignore this email.",
+                    "Click the link below to sign in or create your account:\n{magic_link_url}\n\nThis link expires in {ttl_minutes} minutes.\n\nIf you did not request this, please ignore this email.",
                 );
 
                 let body = if let Some(intent) = &input.provider_link {
@@ -2525,24 +2509,24 @@ where
                 } else {
                     body
                 };
-                let rendered = if let Some(user) = &user {
-                    if input.provider_link.is_some() {
-                        None
-                    } else {
-                        self.render_email_template(
-                            &scope,
-                            tid,
-                            &user,
-                            input.user_agent.as_deref(),
-                            &[
-                                ("magic_link", magic_link_url.as_str()),
-                                ("expiration", &format!("{ttl_minutes} minutes")),
-                            ],
-                            "Your magic link",
-                        )
-                        .await
-                        .ok()
-                    }
+                // Run the same template rendering and delivery for existing and
+                // prospective accounts. Do not personalize pre-authentication mail
+                // with stored profile data or reveal whether an account exists.
+                let rendered = if input.provider_link.is_none() {
+                    self.render_email_template(
+                        &scope,
+                        tid,
+                        None,
+                        input.user_agent.as_deref(),
+                        &[
+                            ("user.email", delivery_email.as_str()),
+                            ("magic_link", magic_link_url.as_str()),
+                            ("expiration", &format!("{ttl_minutes} minutes")),
+                        ],
+                        "Your magic link",
+                    )
+                    .await
+                    .ok()
                 } else {
                     None
                 };
@@ -2917,7 +2901,7 @@ where
                     .render_email_template(
                         &scope,
                         tid,
-                        &user,
+                        Some(&user),
                         input.user_agent.as_deref(),
                         &[
                             ("reset_link", reset_link.as_str()),
@@ -3583,6 +3567,163 @@ mod tests {
             session_code: Some(session_code.to_string()),
             remember_me: false,
             user_agent: Some("Mozilla/5.0 (test)".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn known_and_unknown_magic_link_requests_share_template_and_delivery_without_creating_users()
+     {
+        for known in [false, true] {
+            let mut builder = TridentTestBuilder::new();
+            let mut realm = create_test_realm_with_name("test-realm");
+            let mut settings = create_test_realm_setting(realm.id, false);
+            settings.passwordless_enabled = true;
+            settings.magic_link_enabled = true;
+            settings.user_registration_enabled = true;
+            let tid = Uuid::new_v4();
+            settings.magic_link_template_id = Some(tid);
+            realm.settings = Some(settings.clone());
+            let user = create_test_user_with_email(&realm, "user@example.com");
+            let user_id = user.id;
+            let session_code = Uuid::new_v4();
+            let session = auth_session_with_challenge_issued_at(&realm, session_code, None);
+            let realm_id = realm.id;
+            Arc::get_mut(&mut builder.realm_repo)
+                .unwrap()
+                .expect_get_by_name()
+                .times(1)
+                .returning(move |_| {
+                    let r = realm.clone();
+                    Box::pin(async move { Ok(Some(r)) })
+                });
+            Arc::get_mut(&mut builder.realm_repo)
+                .unwrap()
+                .expect_get_realm_settings()
+                .times(1)
+                .returning(move |_| {
+                    let s = settings.clone();
+                    Box::pin(async move { Ok(Some(s)) })
+                });
+            Arc::get_mut(&mut builder.auth_session_repo)
+                .unwrap()
+                .expect_get_by_session_code()
+                .times(1)
+                .returning(move |_| {
+                    let a = session.clone();
+                    Box::pin(async move { Ok(Unscoped::new(a)) })
+                });
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_get_by_email()
+                .times(1)
+                .returning(move |_, _| {
+                    let u = known.then(|| user.clone());
+                    Box::pin(async move { Ok(u) })
+                });
+            Arc::get_mut(&mut builder.user_repo)
+                .unwrap()
+                .expect_create_user()
+                .never();
+            Arc::get_mut(&mut builder.magic_link_repo)
+                .unwrap()
+                .expect_cleanup_expired()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(()) }));
+            Arc::get_mut(&mut builder.hasher_repo)
+                .unwrap()
+                .expect_hash_magic_token()
+                .times(1)
+                .returning(|_| {
+                    Box::pin(async {
+                        Ok(HashResult::new(
+                            "hash".into(),
+                            "salt".into(),
+                            1,
+                            "test".into(),
+                        ))
+                    })
+                });
+            Arc::get_mut(&mut builder.auth_session_repo)
+                .unwrap()
+                .expect_set_remember_me()
+                .times(1)
+                .returning(|_, _| Box::pin(async { Ok(()) }));
+            Arc::get_mut(&mut builder.magic_link_repo)
+                .unwrap()
+                .expect_create_magic_link()
+                .times(1)
+                .withf(move |uid, _, _, _, _, sid, email, provider| {
+                    *uid == known.then_some(user_id)
+                        && *sid == Some(session_code)
+                        && email == "user@example.com"
+                        && provider.is_none()
+                })
+                .returning(|_, _, _, _, _, _, _, _| Box::pin(async { Ok(()) }));
+            Arc::get_mut(&mut builder.smtp_config_repo)
+                .unwrap()
+                .expect_get_by_realm_id()
+                .times(1)
+                .returning(move |_| {
+                    Box::pin(async move {
+                        Ok(Some(ferriskey_domain::realm::SmtpConfig {
+                            id: Uuid::new_v4(),
+                            realm_id: realm_id.into(),
+                            host: "unused".into(),
+                            port: 25,
+                            username: String::new(),
+                            password: String::new(),
+                            from_email: "auth@example.com".into(),
+                            from_name: "Auth".into(),
+                            encryption: ferriskey_domain::realm::SmtpEncryption::None,
+                            created_at: Utc::now(),
+                            updated_at: Utc::now(),
+                        }))
+                    })
+                });
+            Arc::get_mut(&mut builder.email_template_repo)
+                .unwrap()
+                .expect_get_by_id()
+                .times(1)
+                .returning(move |_, _| {
+                    Box::pin(async move {
+                        Ok(Some(Unscoped::new(
+                            crate::domain::email_template::entities::EmailTemplate {
+                                id: tid,
+                                realm_id: realm_id.into(),
+                                name: "Sign in".into(),
+                                email_type:
+                                    crate::domain::email_template::entities::EmailType::MagicLink,
+                                structure: serde_json::json!({}),
+                                mjml: String::new(),
+                                created_at: Utc::now(),
+                                updated_at: Utc::now(),
+                            },
+                        )))
+                    })
+                });
+            Arc::get_mut(&mut builder.email_port)
+                .unwrap()
+                .expect_send_email()
+                .times(1)
+                .withf(|_, email, subject, body, html| {
+                    email == "user@example.com"
+                        && subject == "Your magic link"
+                        && body.contains("sign in or create your account")
+                        && html.is_some()
+                })
+                .returning(|_, _, _, _, _| Box::pin(async { Ok(()) }));
+            Arc::get_mut(&mut builder.security_event_repo)
+                .unwrap()
+                .expect_store_event()
+                .times(1)
+                .returning(|_| Box::pin(async { Ok(()) }));
+            assert!(
+                builder
+                    .build()
+                    .generate_magic_link(magic_link_input(session_code))
+                    .await
+                    .is_ok()
+            );
         }
     }
 
