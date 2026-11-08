@@ -92,7 +92,7 @@ Weaknesses that are not fixed yet are not listed in this file. They go through t
 
 - TLS terminated in front of the API, or the built-in rustls listener enabled. The issuer and cookie `Secure` flag follow the scheme the API sees.
 - PostgreSQL reached over TLS (`sslMode: require` on the cluster resource).
-- `/metrics` and the OpenAPI pages (`/swagger-ui`, `/redoc`, `/scalar`) reachable only from the internal network.
+- `/metrics` reachable only from the internal network. The Aster patched line removes public OpenAPI documentation routes and viewers; schema export is offline.
 - The default `admin`/`admin` credentials from `env.example` replaced before any exposure.
 
 ## Planned

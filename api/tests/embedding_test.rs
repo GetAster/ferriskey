@@ -59,6 +59,19 @@ async fn public_builder_migrates_serves_and_shuts_down_and_recovers_from_startup
         .expect("schema migrations ran");
     assert!(applied > 0);
     let server = TestServer::new(router).expect("mount embedded router");
+    for path in [
+        "/api-docs/openapi.json",
+        "/swagger-ui",
+        "/swagger-ui/",
+        "/scalar",
+        "/redoc",
+        "/rapidoc",
+    ] {
+        server
+            .get(&format!("/embedded{path}"))
+            .await
+            .assert_status_not_found();
+    }
     let discovery = server
         .get("/embedded/realms/master/.well-known/openid-configuration")
         .await;

@@ -654,11 +654,13 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires PostgreSQL — run with: cargo test -p ferriskey-api --test token_exchange_test -- --ignored"]
     fn the_openapi_document_describes_the_rfc8693_request_and_response() {
         rt().block_on(async {
-            let server = make_server();
-            let doc: Value = server.get("/api-docs/openapi.json").await.json();
+            use utoipa::OpenApi;
+            let doc = serde_json::to_value(
+                ferriskey_api::application::http::server::openapi::ApiDoc::openapi(),
+            )
+            .unwrap();
             let schemas = &doc["components"]["schemas"];
 
             let request = &schemas["TokenRequestValidator"]["properties"];
