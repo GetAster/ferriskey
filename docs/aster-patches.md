@@ -17,9 +17,11 @@ Aster runs FerrisKey as the engine of `aster-idp`, Aster's identity provider. Th
 
 ## Current release
 
-Next candidate (not tagged): `898dcecff62800dc2925c401c6639557eebb37d9` on `upgrade/ferriskey-v0.10.2`, rows 24–25 below. Extends email confirmation to new untrusted provider registrations and adds the wrong-browser copy-link handoff. Exact-pin host validation and deployment are pending; recovery and mandatory-passkey policy are not included.
+Current deployed release: `aster-ferriskey-v0.10.2-13` at `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0` (2026-11-08), rows 24–26 below. Exact-pin host verification passed before tagging: 169 tests including PostgreSQL smoke tests, and all-target/all-feature Clippy clean. The host agent reports it live with aster-idp `481bc1f` and portal_infra `cce6413`; browser handoff, replay rejection and documentation removal passed live. See the release-13 verification record below for remaining findings and limits.
 
-Published candidate: `aster-ferriskey-v0.10.2-12` at `122850250ddc6b4b1624cfa827b21fbcd36b4ba2` (2026-11-08), row 23 below. Fork tests and Forgejo checks passed. This tag was published before the exact-pin host gate, an exception to the required ordering above; host validation and production rollout are pending. The immutable tag will not be moved. Last confirmed deployed release remains 11.
+Next candidate (not tagged): `89e169f4ee09e381a16ca1f4cc4a0cc076728d7d` on `upgrade/ferriskey-v0.10.2`, row 27 below. Defers ordinary passwordless email registration until browser-bound email proof. Exact-pin host validation and controlled live timing checks are pending.
+
+Earlier candidate: `aster-ferriskey-v0.10.2-12` at `122850250ddc6b4b1624cfa827b21fbcd36b4ba2` (2026-11-08), row 23 below. This immutable tag was published before its exact-pin host gate, an exception to the required ordering above, and was superseded by release 13. Its documentation switch and vendored Swagger mitigation were removed by row 26.
 
 `aster-ferriskey-v0.10.2-11` on `upgrade/ferriskey-v0.10.2`, published on 2026-11-07 at `9b6d633706828f5ad4777d6bf03d056f5ca3b869`. Preserves the saved authorization transaction during provider login (row 22), including all earlier authentication changes. Exact-pin host validation: 166 passed, zero failed, two ignored; fork validation: 57 broker unit tests and two actual-router PostgreSQL regressions passed, with independent review. The deployment agent confirmed real Microsoft email-confirmed linking, Google automatic linking, and real Apple Hide My Email sign-in. See the dated verification records below. Apple server-to-server notifications remain log-only.
 
@@ -260,3 +262,25 @@ Release 13 is to include `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0`, including d
 The host agent reported the exact `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0` gate passed in pushed aster-idp commit `481bc1f`: all-target/all-feature Clippy clean and 169 tests passed, including both fresh-PostgreSQL smoke tests. The host lockfile contains neither ZIP nor the viewer crates; the ZIP audit findings are gone. Neither host nor deployment configuration used the removed documentation switch. The real-binary fallback probe passed for documentation URLs at empty, `/api` and `/host` roots while discovery remained available. That probe has no old-pin negative control; live ADMIN-03 remains pending.
 
 Published annotated immutable tag `aster-ferriskey-v0.10.2-13` at `19f1ffe7b1b1e937467fc70cb7254da032ed7fc0`. Remote tag object `7b923d8f17eb9376cf32c132fedcf278a0c5556d` and peeled commit were verified after pushing. This closes the candidate host gate above. Deployment, live browser-handoff/sign-in journeys and ADMIN-03 are handed to the host agent and are not yet recorded as passed.
+
+### Release 13 live verification
+
+The host agent reported deployment at about 22:10 UTC on 2026-11-08 with aster-idp `481bc1f`, the release-13 webapp and portal_infra `cce6413`. Evidence: aster-idp `docs/security/runs/261108-run-1.md`, retest section at `1a0d568`.
+
+Wrong-browser confirmation was refused without consuming the link or signing in the initiating attacker; copying the link into its legitimate initiating browser signed in the correct subject. Reusing a redeemed link was refused. All documentation URLs under `/api` and `/api/realms/aster` returned 404; outside `/api`, the webapp fallback returned HTML without documentation markers. Discovery returned 200. ADMIN-03 passed and F-18 was closed.
+
+The broader live regression remained 66 passed and 17 failed, with no result changed from the previous run; failures are existing findings. The unverified-provider registration fix has automated PostgreSQL coverage, but live reproduction remains blocked by Microsoft's `AADSTS500208`. This report does not claim remediation of pre-existing accounts or closure of the remaining security findings.
+
+## Defer ordinary email registration until proof — 2026-11-08
+
+| # | Topic branch | Summary | Upstream status |
+| --- | --- | --- | --- |
+| 27 | `fix/deferred-email-registration` | An unknown address in a passwordless registration-enabled realm receives a pending magic link with no user record. Correct-browser redemption creates the verified account, binds the session and consumes the proof atomically. Existing sending limits remain; known and unknown recipients use the same template and SMTP path. Topic `f6791b53`; integrated `89e169f4`. | Not submitted. |
+
+Candidate `89e169f4ee09e381a16ca1f4cc4a0cc076728d7d` is pushed and awaiting the exact-pin host gate. No release tag is published for this change. Controlled live timing verification is pending; the previous comparison mixed a deliverable existing address with randomly generated recipients, so SMTP behavior can confound the result.
+
+Prior art is row 25's nullable `magic_links.user_id` and transactional provider registration. This change reuses them with no provider intent for ordinary email registration. No endpoint, configuration key, schema migration, queue or service is added.
+
+Account-creation audit: ordinary password registration still creates an unverified user before email proof in non-passwordless realms, but is refused in passwordless realms. This separate legacy flow is not redesigned here. Resending verification loads an existing user through validated login-action identity and creates only a verification token. New provider identities require trusted verified upstream email or release-13 email proof. Administrative user creation, managed directory imports, configured startup bootstrap and trusted host service-account provisioning have explicit provisioning authority.
+
+Validation: 1,170 core unit tests passed (176 database-dependent tests ignored by that command). The new PostgreSQL authority/race test and the actual HTTP passwordless registration test passed, as did the unchanged email-limit PostgreSQL regression. The HTTP test run against immutable release 13 fails at the intended assertion: requesting a link creates one account instead of zero. Independent review found no blocking issue; formatting and whitespace checks passed. All eight provider-confirmation PostgreSQL tests also passed: 11 actual PostgreSQL tests total. The disposable database and baseline worktree were removed. The integrated candidate has the same source tree as the tested topic commit.
