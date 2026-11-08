@@ -459,6 +459,14 @@ pub struct ServerArgs {
     )]
     pub root_path: String,
     #[arg(
+        long = "server-api-docs-enabled",
+        env = "SERVER_API_DOCS_ENABLED",
+        default_value_t = true,
+        action = clap::ArgAction::Set,
+        long_help = "Serve the public OpenAPI document and Swagger UI, Scalar, Redoc and RapiDoc. Set false to omit all documentation routes in production. OAuth/OIDC discovery is unaffected."
+    )]
+    pub api_docs_enabled: bool,
+    #[arg(
         long = "server-public-url",
         env = "SERVER_PUBLIC_URL",
         name = "SERVER_PUBLIC_URL",
@@ -491,6 +499,7 @@ impl Default for ServerArgs {
             host: "0.0.0.0".into(),
             port: 3333,
             root_path: String::new(),
+            api_docs_enabled: true,
             public_url: None,
             trust_forwarded_for: false,
             token_max_in_flight: None,
