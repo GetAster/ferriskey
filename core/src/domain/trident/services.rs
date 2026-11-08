@@ -2362,40 +2362,61 @@ where
             ).await.inspect_err(|e| warn!("Failed to record email limit event: {e}"));
             return Ok(());
         }
-        let user = match self
-            .user_repository
-            .get_by_email(&normalized_email, realm.id)
-            .await
-        {
-            Ok(Some(user)) => user,
-            Ok(None)
-                if input.provider_link.is_none()
-                    && settings.passwordless_enabled
-                    && settings.user_registration_enabled =>
-            {
-                self.user_repository
-                    .create_user(crate::domain::user::value_objects::CreateUserRequest {
-                        id: None,
-                        realm_id: realm.id,
-                        client_id: None,
-                        username: normalized_email.clone(),
-                        email: Some(normalized_email),
-                        firstname: None,
-                        lastname: None,
-                        email_verified: false,
-                        enabled: true,
-                    })
-                    .await?
-            }
-            Ok(None) => return Ok(()),
-            Err(e) => {
-                error!("Failed to look up user during magic link generation: {}", e);
-                return Ok(()); // Valid on purpose to avoid leaking email existence
-            }
+        let registration = input
+            .provider_link
+            .as_ref()
+            .filter(|intent| intent.registration_username.is_some());
+        let user = if registration.is_some() {
+            // A new provider registration has no account to look up or reserve.
+            // Redemption creates it atomically, and refuses if an account appeared
+            // meanwhile. Restarting then asks for explicit existing-account linking.
+            None
+        } else {
+            Some(
+                match self
+                    .user_repository
+                    .get_by_email(&normalized_email, realm.id)
+                    .await
+                {
+                    Ok(Some(user)) => user,
+                    Ok(None)
+                        if input.provider_link.is_none()
+                            && settings.passwordless_enabled
+                            && settings.user_registration_enabled =>
+                    {
+                        self.user_repository
+                            .create_user(crate::domain::user::value_objects::CreateUserRequest {
+                                id: None,
+                                realm_id: realm.id,
+                                client_id: None,
+                                username: normalized_email.clone(),
+                                email: Some(normalized_email.clone()),
+                                firstname: None,
+                                lastname: None,
+                                email_verified: false,
+                                enabled: true,
+                            })
+                            .await?
+                    }
+                    Ok(None) => return Ok(()),
+                    Err(e) => {
+                        error!("Failed to look up user during magic link generation: {}", e);
+                        return Ok(());
+                    }
+                },
+            )
         };
-        if !user.enabled || user.is_locked(Utc::now()) {
+        if user
+            .as_ref()
+            .is_some_and(|user| !user.enabled || user.is_locked(Utc::now()))
+        {
             return Ok(());
         }
+        let user_id = user.as_ref().map(|user| user.id);
+        let delivery_email = user
+            .as_ref()
+            .and_then(|user| user.email.clone())
+            .unwrap_or_else(|| normalized_email.clone());
         if let Some(intent) = &input.provider_link {
             let code = input
                 .session_code
@@ -2412,12 +2433,23 @@ where
                 || session.authenticated
                 || session.code.is_some()
                 || session.user_id.is_some()
-                || intent.user_id != user.id
-                || user.email.as_deref() != Some(intent.email.as_str())
+                || intent.email != delivery_email
+                || (registration.is_none() && user_id != Some(intent.user_id))
+                || registration.is_some_and(|intent| {
+                    intent.user_id.is_nil()
+                        || intent
+                            .registration_username
+                            .as_ref()
+                            .is_none_or(|name| name.trim().is_empty())
+                })
             {
                 return Err(CoreError::InvalidSession);
             }
         }
+        let email_event = |kind, status| match user_id {
+            Some(user_id) => SecurityEvent::new(realm.id, kind, status, user_id),
+            None => SecurityEvent::without_actor(realm.id, kind, status),
+        };
         let _ = signup_session;
         self.magic_link_repository
             .cleanup_expired(realm.id.into())
@@ -2456,13 +2488,13 @@ where
 
         self.magic_link_repository
             .create_magic_link(
-                user.id,
+                user_id,
                 realm.id.into(),
                 magic_token_id,
                 &magic_token_hash,
                 expires_at,
                 auth_session_code,
-                user.email.clone().ok_or(CoreError::InvalidRequest)?,
+                delivery_email.clone(),
                 input.provider_link.clone(),
             )
             .await?;
@@ -2487,28 +2519,32 @@ where
 
                 let body = if let Some(intent) = &input.provider_link {
                     format!(
-                        "Confirm connecting {} to your existing account:\n{magic_link_url}\n\nThis will allow that provider identity to sign in to your account. This link expires in {ttl_minutes} minutes. If you did not request this connection, do not open the link.",
+                        "Confirm your email to connect {} to your account:\n{magic_link_url}\n\nThis will allow that provider identity to sign in to your account. This link expires in {ttl_minutes} minutes. If you did not request this connection, do not open the link.",
                         intent.provider_name
                     )
                 } else {
                     body
                 };
-                let rendered = if input.provider_link.is_some() {
-                    None
+                let rendered = if let Some(user) = &user {
+                    if input.provider_link.is_some() {
+                        None
+                    } else {
+                        self.render_email_template(
+                            &scope,
+                            tid,
+                            &user,
+                            input.user_agent.as_deref(),
+                            &[
+                                ("magic_link", magic_link_url.as_str()),
+                                ("expiration", &format!("{ttl_minutes} minutes")),
+                            ],
+                            "Your magic link",
+                        )
+                        .await
+                        .ok()
+                    }
                 } else {
-                    self.render_email_template(
-                        &scope,
-                        tid,
-                        &user,
-                        input.user_agent.as_deref(),
-                        &[
-                            ("magic_link", magic_link_url.as_str()),
-                            ("expiration", &format!("{ttl_minutes} minutes")),
-                        ],
-                        "Your magic link",
-                    )
-                    .await
-                    .ok()
+                    None
                 };
                 let (subject, html_body) = rendered
                     .map(|(subject, html)| (subject, Some(html)))
@@ -2525,30 +2561,19 @@ where
 
                 match self
                     .email_port
-                    .send_email(
-                        &smtp_config,
-                        user.email.as_deref().unwrap_or(""),
-                        &subject,
-                        &body,
-                        html_body,
-                    )
+                    .send_email(&smtp_config, &delivery_email, &subject, &body, html_body)
                     .await
                 {
                     Ok(()) => {
                         let _ = self
                             .security_event_repository
                             .store_event(
-                                SecurityEvent::new(
-                                    realm.id,
-                                    SecurityEventType::EmailSent,
-                                    EventStatus::Success,
-                                    user.id,
-                                )
-                                .with_details(serde_json::json!({
-                                    "template_id": tid.to_string(),
-                                    "email_type": "magic_link",
-                                    "user_id": user.id.to_string(),
-                                })),
+                                email_event(SecurityEventType::EmailSent, EventStatus::Success)
+                                    .with_details(serde_json::json!({
+                                        "template_id": tid.to_string(),
+                                        "email_type": "magic_link",
+                                        "user_id": user_id.map(|id| id.to_string()),
+                                    })),
                             )
                             .await
                             .inspect_err(|e| warn!("Failed to log email sent event: {}", e));
@@ -2558,19 +2583,14 @@ where
                         let _ = self
                             .security_event_repository
                             .store_event(
-                                SecurityEvent::new(
-                                    realm.id,
-                                    SecurityEventType::EmailNotSent,
-                                    EventStatus::Failure,
-                                    user.id,
-                                )
-                                .with_details(serde_json::json!({
-                                    "reason": format!("Failed to send magic link email: {}", e),
-                                    "email_type": "magic_link",
-                                    "error_code": "SMTP_SEND_FAILED",
-                                    "template_id": tid.to_string(),
-                                    "user_id": user.id.to_string(),
-                                })),
+                                email_event(SecurityEventType::EmailNotSent, EventStatus::Failure)
+                                    .with_details(serde_json::json!({
+                                        "reason": format!("Failed to send magic link email: {}", e),
+                                        "email_type": "magic_link",
+                                        "error_code": "SMTP_SEND_FAILED",
+                                        "template_id": tid.to_string(),
+                                        "user_id": user_id.map(|id| id.to_string()),
+                                    })),
                             )
                             .await
                             .inspect_err(|e| warn!("Failed to log email not sent event: {}", e));
@@ -2585,17 +2605,12 @@ where
                 let _ = self
                     .security_event_repository
                     .store_event(
-                        SecurityEvent::new(
-                            realm.id,
-                            SecurityEventType::EmailNotSent,
-                            EventStatus::Failure,
-                            user.id,
-                        )
+                        email_event(SecurityEventType::EmailNotSent, EventStatus::Failure)
                         .with_details(serde_json::json!({
                             "reason": format!("No magic_link email template configured for realm {}", realm.name),
                             "email_type": "magic_link",
                             "error_code": "TEMPLATE_NOT_CONFIGURED",
-                            "user_id": user.id.to_string(),
+                            "user_id": user_id.map(|id| id.to_string()),
                         })),
                     )
                     .await
@@ -2607,18 +2622,13 @@ where
                 let _ = self
                     .security_event_repository
                     .store_event(
-                        SecurityEvent::new(
-                            realm.id,
-                            SecurityEventType::EmailNotSent,
-                            EventStatus::Failure,
-                            user.id,
-                        )
-                        .with_details(serde_json::json!({
-                            "reason": format!("SMTP not configured for realm {}", realm.name),
-                            "email_type": "magic_link",
-                            "error_code": "SMTP_NOT_CONFIGURED",
-                            "user_id": user.id.to_string(),
-                        })),
+                        email_event(SecurityEventType::EmailNotSent, EventStatus::Failure)
+                            .with_details(serde_json::json!({
+                                "reason": format!("SMTP not configured for realm {}", realm.name),
+                                "email_type": "magic_link",
+                                "error_code": "SMTP_NOT_CONFIGURED",
+                                "user_id": user_id.map(|id| id.to_string()),
+                            })),
                     )
                     .await
                     .inspect_err(|e| warn!("Failed to log email not sent event: {}", e));
@@ -2718,24 +2728,22 @@ where
         }
         // Consume once before issuing any continuation or authorization code. The
         // repository verifies the email captured at send time, never a changed address.
-        if !self
+        let user_id = self
             .magic_link_repository
             .consume(magic_link.magic_token_id)
             .await?
-        {
-            return Err(CoreError::InvalidMagicLink);
-        }
+            .ok_or(CoreError::InvalidMagicLink)?;
         let evidence = AuthenticationEvidence::new(AuthenticationProof::EmailLink);
         self.auth_session_repository
-            .record_authentication(auth_session.id, magic_link.user_id, evidence.clone())
+            .record_authentication(auth_session.id, user_id, evidence.clone())
             .await?;
         let mut auth_session = auth_session;
         auth_session.auth_evidence = Some(evidence);
-        auth_session.user_id = Some(magic_link.user_id);
+        auth_session.user_id = Some(user_id);
 
         match self
             .user_required_action_repository
-            .remove_required_action(magic_link.user_id, RequiredAction::VerifyEmail)
+            .remove_required_action(user_id, RequiredAction::VerifyEmail)
             .await
         {
             Ok(()) | Err(RequiredActionError::NotFound) => {}
@@ -2743,16 +2751,16 @@ where
         }
         if auth_session.auth_requirements.is_some() {
             self.admission
-                .check_authentication_requirements(&auth_session, magic_link.user_id)
+                .check_authentication_requirements(&auth_session, user_id)
                 .await?;
         }
 
         let pending = self
-            .pending_auth_step_for(magic_link.user_id, &scope, &[RequiredAction::VerifyEmail])
+            .pending_auth_step_for(user_id, &scope, &[RequiredAction::VerifyEmail])
             .await?;
         let needs_otp = self
             .credential_repository
-            .get_credentials_by_user_id(magic_link.user_id)
+            .get_credentials_by_user_id(user_id)
             .await
             .map_err(|_| CoreError::GetUserCredentialsError)?
             .iter()
@@ -2760,7 +2768,7 @@ where
         if needs_otp {
             return Ok(VerifyMagicLinkOutput {
                 pending_actions: vec![],
-                user_id: magic_link.user_id,
+                user_id: user_id,
                 session_code,
                 second_factor_verified: false,
                 login_url: String::new(),
@@ -2771,22 +2779,17 @@ where
         let pending_actions = match pending {
             Some(PendingAuthStep::RequiredActions(actions)) => actions,
             Some(PendingAuthStep::OtpChallenge) => vec![],
-            None if self.passkey_offer_for(magic_link.user_id, &scope).await? => {
+            None if self.passkey_offer_for(user_id, &scope).await? => {
                 vec![RequiredAction::ConfigurePasskey]
             }
             None => {
                 let (login_url, sso_session) = self
-                    .complete_login(
-                        &auth_session,
-                        magic_link.user_id,
-                        &scope,
-                        &input.webapp_base_url,
-                    )
+                    .complete_login(&auth_session, user_id, &scope, &input.webapp_base_url)
                     .await?
                     .into_parts();
                 return Ok(VerifyMagicLinkOutput {
                     pending_actions: vec![],
-                    user_id: magic_link.user_id,
+                    user_id: user_id,
                     session_code,
                     second_factor_verified: false,
                     login_url,
@@ -2796,7 +2799,7 @@ where
         };
         Ok(VerifyMagicLinkOutput {
             pending_actions,
-            user_id: magic_link.user_id,
+            user_id: user_id,
             session_code,
             second_factor_verified: false,
             login_url: String::new(),
@@ -5604,7 +5607,7 @@ mod tests {
     fn magic_link_for(user_id: Uuid, realm_id: Uuid, session_code: Uuid) -> MagicLink {
         MagicLink {
             id: Uuid::new_v4(),
-            user_id,
+            user_id: Some(user_id),
             realm_id,
             magic_token_id: Uuid::new_v4(),
             magic_token_hash: "hashed".to_string(),
@@ -5745,7 +5748,10 @@ mod tests {
         Arc::get_mut(&mut builder.magic_link_repo)
             .unwrap()
             .expect_consume()
-            .returning(|_| Box::pin(async { Ok(true) }));
+            .returning({
+                let user_id = user.id;
+                move |_| Box::pin(async move { Ok(Some(user_id)) })
+            });
         Arc::get_mut(&mut builder.user_required_action_repo)
             .unwrap()
             .expect_remove_required_action()

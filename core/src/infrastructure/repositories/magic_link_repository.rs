@@ -50,7 +50,7 @@ impl From<MagicLinkModel> for MagicLink {
 impl MagicLinkRepository for PostgresMagicLinkRepository {
     async fn create_magic_link(
         &self,
-        user_id: Uuid,
+        user_id: Option<Uuid>,
         realm_id: Uuid,
         token_id: Uuid,
         magic_token_hash: &HashResult,
@@ -123,7 +123,7 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
         Ok(())
     }
 
-    async fn consume(&self, token_id: Uuid) -> Result<bool, CoreError> {
+    async fn consume(&self, token_id: Uuid) -> Result<Option<Uuid>, CoreError> {
         let tx = self
             .db
             .begin()
@@ -141,10 +141,10 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
             .await
             .map_err(|_| CoreError::InternalServerError)?;
         let Some(link) = rows.into_iter().next() else {
-            return Ok(false);
+            return Ok(None);
         };
         let Some(email) = link.email else {
-            return Ok(false);
+            return Ok(None);
         };
         if let Some(session_id) = link.auth_session_code {
             let session = tx.query_one(Statement::from_sql_and_values(DbBackend::Postgres,
@@ -152,43 +152,78 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
                 [session_id.into(), link.realm_id.into(), link.user_id.into()]))
                 .await.map_err(|_| CoreError::InternalServerError)?;
             if session.is_none() {
-                return Ok(false);
+                return Ok(None);
             }
         }
+        let mut user_id = link.user_id;
         if let Some(raw_intent) = link.provider_link {
             let intent: crate::domain::abyss::identity_provider::broker::ProviderLinkIntent =
                 serde_json::from_value(raw_intent).map_err(|_| CoreError::InvalidMagicLink)?;
-            if intent.user_id != link.user_id || intent.email != email {
-                return Ok(false);
+            if intent.email != email || intent.user_id.is_nil() {
+                return Ok(None);
+            }
+            if let Some(username) = &intent.registration_username {
+                if link.user_id.is_some() || username.trim().is_empty() {
+                    return Ok(None);
+                }
+                let Some(session_id) = link.auth_session_code else {
+                    return Ok(None);
+                };
+                // Lock provider and initiating transaction before creating anything.
+                // A concurrent email/username registration or provider connection is
+                // refused; it never upgrades this registration proof into a merge.
+                let valid = tx.query_one(Statement::from_sql_and_values(DbBackend::Postgres,
+                    "SELECT p.id FROM identity_providers p JOIN auth_sessions a ON a.id=$1 AND a.realm_id=p.realm_id WHERE p.id=$2 AND p.realm_id=$3 AND p.enabled=true AND p.link_only=false AND a.expires_at>now() AND a.authenticated=false AND a.code IS NULL AND a.user_id IS NULL FOR UPDATE OF p, a",
+                    [session_id.into(), intent.provider_id.into(), link.realm_id.into()]))
+                    .await.map_err(|_| CoreError::InternalServerError)?;
+                if valid.is_none() {
+                    return Ok(None);
+                }
+                let inserted = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
+                    "INSERT INTO users (id,realm_id,username,firstname,lastname,email,email_verified,enabled,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,true,true,now(),now()) ON CONFLICT DO NOTHING",
+                    [intent.user_id.into(), link.realm_id.into(), username.clone().into(), intent.given_name.clone().into(), intent.family_name.clone().into(), email.clone().into()]))
+                    .await.map_err(|_| CoreError::InternalServerError)?;
+                if inserted.rows_affected() != 1 {
+                    return Ok(None);
+                }
+                user_id = Some(intent.user_id);
+            } else if Some(intent.user_id) != link.user_id {
+                return Ok(None);
             }
             let Some(session_id) = link.auth_session_code else {
-                return Ok(false);
+                return Ok(None);
+            };
+            let Some(target_user_id) = user_id else {
+                return Ok(None);
             };
             // Lock all authority-bearing rows until the link write commits.
             let valid = tx.query_one(Statement::from_sql_and_values(DbBackend::Postgres,
                 "SELECT u.id FROM users u JOIN auth_sessions a ON a.id = $1 AND a.realm_id = u.realm_id JOIN identity_providers p ON p.id = $2 AND p.realm_id = u.realm_id WHERE u.id = $3 AND u.realm_id = $4 AND u.email = $5 AND u.enabled = true AND (u.locked_until IS NULL OR u.locked_until <= now()) AND a.expires_at > now() AND a.authenticated = false AND a.code IS NULL AND a.user_id IS NULL AND p.enabled = true AND p.link_only = false FOR UPDATE OF u, a, p",
-                [session_id.into(), intent.provider_id.into(), link.user_id.into(), link.realm_id.into(), email.clone().into()]))
+                [session_id.into(), intent.provider_id.into(), target_user_id.into(), link.realm_id.into(), email.clone().into()]))
                 .await.map_err(|_| CoreError::InternalServerError)?;
             if valid.is_none() {
-                return Ok(false);
+                return Ok(None);
             }
             let inserted = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
                 "INSERT INTO identity_provider_links (id, user_id, identity_provider_id, identity_provider_user_id, identity_provider_username, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,now(),now()) ON CONFLICT DO NOTHING",
-                [generate_uuid_v7().into(), link.user_id.into(), intent.provider_id.into(), intent.external_id.into(), email.clone().into()]))
+                [generate_uuid_v7().into(), target_user_id.into(), intent.provider_id.into(), intent.external_id.into(), email.clone().into()]))
                 .await.map_err(|_| CoreError::InternalServerError)?;
             if inserted.rows_affected() != 1 {
-                return Ok(false);
+                return Ok(None);
             }
             tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
                 "UPDATE users SET firstname=COALESCE(firstname,$2), lastname=COALESCE(lastname,$3) WHERE id=$1",
-                [link.user_id.into(), intent.given_name.into(), intent.family_name.into()]))
+                [target_user_id.into(), intent.given_name.into(), intent.family_name.into()]))
                 .await.map_err(|_| CoreError::InternalServerError)?;
         }
+        let Some(target_user_id) = user_id else {
+            return Ok(None);
+        };
         if let Some(session_id) = link.auth_session_code {
             tx.execute(Statement::from_sql_and_values(
                 DbBackend::Postgres,
                 "UPDATE auth_sessions SET user_id=$2 WHERE id=$1",
-                [session_id.into(), link.user_id.into()],
+                [session_id.into(), target_user_id.into()],
             ))
             .await
             .map_err(|_| CoreError::InternalServerError)?;
@@ -196,15 +231,15 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
         {
             let changed = tx.execute(Statement::from_sql_and_values(DbBackend::Postgres,
                 "UPDATE users SET email_verified = true WHERE id = $1 AND email = $2 AND enabled = true",
-                [link.user_id.into(), email.into()])).await.map_err(|_| CoreError::InternalServerError)?;
+                [target_user_id.into(), email.into()])).await.map_err(|_| CoreError::InternalServerError)?;
             if changed.rows_affected() != 1 {
-                return Ok(false);
+                return Ok(None);
             }
         }
         tx.commit()
             .await
             .map_err(|_| CoreError::InternalServerError)?;
-        Ok(true)
+        Ok(Some(target_user_id))
     }
 
     async fn decline_provider_link(

@@ -232,7 +232,7 @@ where
         idp: &Scoped<IdentityProvider>,
         user_info: &BrokeredUserInfo,
         access_token: Option<&str>,
-    ) -> Result<(User, bool, Option<ProviderLinkIntent>), CoreError> {
+    ) -> Result<(Option<User>, bool, Option<ProviderLinkIntent>), CoreError> {
         let realm_id = scope.id();
         let log_branch = |branch: &str| {
             info!(provider = %idp.get().alias, branch,
@@ -265,7 +265,7 @@ where
             }
 
             log_branch("linked");
-            return Ok((user, false, None));
+            return Ok((Some(user), false, None));
         }
 
         if let Some(email) = &user_info.email
@@ -279,7 +279,7 @@ where
             self.create_idp_link(&user, idp, user_info, access_token)
                 .await?;
             log_branch("auto_link_by_email");
-            return Ok((user, false, None));
+            return Ok((Some(user), false, None));
         }
 
         if idp.get().link_only {
@@ -293,6 +293,7 @@ where
             }
             let intent = ProviderLinkIntent {
                 user_id: user.id,
+                registration_username: None,
                 provider_id: idp.get().id.into(),
                 provider_name: idp.get().alias.clone(),
                 external_id: user_info.subject.clone(),
@@ -302,11 +303,35 @@ where
                 remember_me: false,
             };
             log_branch("pending_connection");
-            return Ok((user, false, Some(intent)));
+            return Ok((Some(user), false, Some(intent)));
         }
 
-        // 4. Create new user
+        // Untrusted contact data must never reserve an account for someone else's
+        // later email sign-in. Store only a purpose-bound proof intent until the
+        // requester proves this address in the initiating browser.
         let username = user_info.get_username(&idp.get().alias);
+        let email = user_info
+            .email
+            .as_ref()
+            .filter(|email| !email.trim().is_empty())
+            .ok_or(CoreError::InvalidRequest)?;
+        if !(idp.get().trust_email && user_info.email_verified == Some(true)) {
+            let intent = ProviderLinkIntent {
+                user_id: crate::domain::common::generate_uuid_v7(),
+                registration_username: Some(username),
+                provider_id: idp.get().id.into(),
+                provider_name: idp.get().alias.clone(),
+                external_id: user_info.subject.clone(),
+                email: crate::domain::authentication::services::normalize_login_email(email),
+                given_name: user_info.given_name.clone(),
+                family_name: user_info.family_name.clone(),
+                remember_me: false,
+            };
+            log_branch("pending_registration");
+            return Ok((None, false, Some(intent)));
+        }
+
+        // 4. Create a user only when the provider established trusted email ownership.
 
         let user = self
             .user_repository
@@ -328,7 +353,7 @@ where
             .await?;
 
         log_branch("new_user");
-        Ok((user, true, None))
+        Ok((Some(user), true, None))
     }
 
     /// Creates a link between a user and an identity provider
@@ -1155,7 +1180,7 @@ where
             .find_or_create_user(&scope, &idp, &user_info, Some(&token_response.access_token))
             .await?;
 
-        if !user.enabled {
+        if user.as_ref().is_some_and(|user| !user.enabled) {
             return Err(CoreError::UserDisabled);
         }
 
@@ -1236,7 +1261,7 @@ where
                     );
                     return Err(CoreError::InvalidSession);
                 }
-                pending = pending_connection_session(original, user.id, session.expires_at)?;
+                pending = pending_connection_session(original, intent.user_id, session.expires_at)?;
             }
             pending.expires_at = pending.expires_at.min(session.expires_at);
             intent.remember_me = pending.remember_me;
@@ -1252,7 +1277,7 @@ where
                     urlencoding::encode(&intent.provider_name)
                 ),
                 authorization_code: None,
-                user_id: user.id,
+                user_id: intent.user_id,
                 is_new_user: false,
                 client_id: client.client_id,
                 browser_session_id: Some(pending.id),
@@ -1261,6 +1286,8 @@ where
                 pending_provider_link: Some(intent),
             });
         }
+
+        let user = user.ok_or(CoreError::InvalidRequest)?;
 
         // 9. Create or update auth session with authorization code
         let authorization_code = Self::generate_random_string(32);
@@ -1993,12 +2020,106 @@ mod tests {
                 assert!(matches!(result, Err(CoreError::LinkOnlyUserNotFound)));
             } else {
                 let (found, created, pending) = result.unwrap();
-                assert_eq!(found.id, user.id);
+                assert_eq!(found.unwrap().id, user.id);
                 assert!(!created);
                 let pending = pending.unwrap();
                 assert_eq!(pending.user_id, user.id);
                 assert_eq!(pending.external_id, info.subject);
                 assert_eq!(pending.email, user.email.unwrap());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn a_new_untrusted_provider_identity_is_only_an_email_proof_intent() {
+        use crate::domain::{
+            client::ports::{MockClientRepository, MockRedirectUriRepository},
+            common::services::tests::create_test_realm_with_name,
+            realm::ports::MockRealmRepository,
+            user::ports::MockUserRepository,
+        };
+        use ferriskey_abyss::identity_provider::{
+            IdentityProviderCreationConfig,
+            broker::ports::{MockBrokerAuthSessionRepository, MockIdentityProviderLinkRepository},
+            ports::MockIdentityProviderRepository,
+        };
+        for (trust_email, email_verified, email, link_only) in [
+            (true, None, Some("victim@example.test"), false),
+            (true, Some(false), Some("victim@example.test"), false),
+            (false, Some(true), Some("victim@example.test"), false),
+            (false, None, None, false),
+            (true, Some(true), None, false),
+            (false, None, Some("victim@example.test"), true),
+        ] {
+            let realm = create_test_realm_with_name("test");
+            let scope = RealmScope::from_realm(realm.clone());
+            let provider = Unscoped::new(IdentityProvider::new(IdentityProviderCreationConfig {
+                realm_id: realm.id,
+                alias: "microsoft".into(),
+                provider_id: "oidc".into(),
+                enabled: true,
+                display_name: None,
+                first_broker_login_flow_alias: None,
+                post_broker_login_flow_alias: None,
+                store_token: true,
+                add_read_token_role_on_create: false,
+                trust_email,
+                link_only,
+                config: serde_json::from_value(serde_json::json!({})).unwrap(),
+            }))
+            .in_realm(&scope)
+            .unwrap();
+            let mut links = MockIdentityProviderLinkRepository::new();
+            links
+                .expect_get_by_provider_and_external_id()
+                .returning(|_, _| Box::pin(async { Ok(None) }));
+            links.expect_create().never();
+            let mut users = MockUserRepository::new();
+            users
+                .expect_get_by_email()
+                .returning(|_, _| Box::pin(async { Ok(None) }));
+            users.expect_create_user().never();
+            let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+            let service = BrokerServiceImpl::new(
+                Arc::new(MockRealmRepository::new()),
+                Arc::new(MockIdentityProviderRepository::new()),
+                Arc::new(MockBrokerAuthSessionRepository::new()),
+                Arc::new(links),
+                Arc::new(MockClientRepository::new()),
+                Arc::new(MockRedirectUriRepository::new()),
+                Arc::new(users),
+                Arc::new(MockAuthSessionRepository::new()),
+                Arc::new(NoOAuthRequests),
+                Arc::new(MockLoginAdmissionPort::new()),
+                FlowRecorder::new(sender),
+            );
+            let info = BrokeredUserInfo {
+                subject: "tenant:subject".into(),
+                email: email.map(str::to_string),
+                email_verified,
+                ..Default::default()
+            };
+            let result = service
+                .find_or_create_user(&scope, &provider, &info, Some("must-not-be-retained"))
+                .await;
+            if link_only {
+                assert!(matches!(result, Err(CoreError::LinkOnlyUserNotFound)));
+            } else if email.is_none() {
+                assert!(matches!(result, Err(CoreError::InvalidRequest)));
+            } else {
+                let (user, created, intent) = result.unwrap();
+                assert!(user.is_none());
+                assert!(!created);
+                let intent = intent.unwrap();
+                assert!(!intent.user_id.is_nil());
+                assert!(intent.registration_username.is_some());
+                assert_eq!(intent.email, email.unwrap());
+                assert_eq!(intent.external_id, info.subject);
+                assert!(
+                    !serde_json::to_string(&intent)
+                        .unwrap()
+                        .contains("must-not-be-retained")
+                );
             }
         }
     }

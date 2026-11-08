@@ -61,7 +61,7 @@ impl MfaRecoveryCode {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MagicLink {
     pub id: Uuid,
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>,
     pub realm_id: Uuid,
     pub magic_token_id: Uuid,
     pub magic_token_hash: String,

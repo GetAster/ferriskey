@@ -14,7 +14,7 @@ impl EntityName for Entity {
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
     pub id: Uuid,
-    pub user_id: Uuid,
+    pub user_id: Option<Uuid>,
     pub realm_id: Uuid,
     pub token_id: Uuid,
     pub token: String,
@@ -62,7 +62,7 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::Id => ColumnType::Uuid.def(),
-            Self::UserId => ColumnType::Uuid.def(),
+            Self::UserId => ColumnType::Uuid.def().null(),
             Self::RealmId => ColumnType::Uuid.def(),
             Self::TokenId => ColumnType::Uuid.def().unique(),
             Self::Token => ColumnType::String(StringLen::N(255u32)).def().unique(),
