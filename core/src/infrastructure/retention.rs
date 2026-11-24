@@ -229,6 +229,7 @@ mod db_tests {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .expect("create refresh token");

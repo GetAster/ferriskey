@@ -126,31 +126,6 @@ impl PostgresRefreshTokenRepository {
 }
 
 impl RefreshTokenRepository for PostgresRefreshTokenRepository {
-    async fn set_authentication_evidence(
-        &self,
-        jti: Uuid,
-        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
-    ) -> Result<(), JwtError> {
-        let value =
-            serde_json::to_value(evidence).map_err(|e| JwtError::GenerationError(e.to_string()))?;
-        let result = crate::entity::refresh_tokens::Entity::update_many()
-            .col_expr(
-                crate::entity::refresh_tokens::Column::AuthEvidence,
-                Expr::value(value),
-            )
-            .filter(crate::entity::refresh_tokens::Column::Jti.eq(jti))
-            .filter(crate::entity::refresh_tokens::Column::AuthEvidence.is_null())
-            .exec(&self.issued_db)
-            .await
-            .map_err(|e| JwtError::GenerationError(e.to_string()))?;
-        if result.rows_affected != 1 {
-            return Err(JwtError::GenerationError(
-                "missing refresh token evidence target".into(),
-            ));
-        }
-        Ok(())
-    }
-
     async fn create(
         &self,
         jti: Uuid,
@@ -161,7 +136,12 @@ impl RefreshTokenRepository for PostgresRefreshTokenRepository {
         token_hash: Option<RefreshTokenHash>,
         client_id: Option<String>,
         scope: Option<String>,
+        auth_evidence: Option<ferriskey_domain::authentication::evidence::AuthenticationEvidence>,
     ) -> Result<RefreshToken, JwtError> {
+        let auth_evidence = auth_evidence
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|e| JwtError::GenerationError(e.to_string()))?;
         let family_id = Uuid::new_v4();
         let model = crate::entity::refresh_tokens::ActiveModel {
             id: Set(generate_uuid_v7()),
@@ -181,7 +161,7 @@ impl RefreshTokenRepository for PostgresRefreshTokenRepository {
             scope: Set(scope),
             previous_jti: Set(None),
             previous_token_hash: Set(None),
-            auth_evidence: Set(None),
+            auth_evidence: Set(auth_evidence),
         };
 
         let refresh_token = model
@@ -567,6 +547,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .expect("issue a refresh token")
@@ -589,6 +570,7 @@ mod tests {
                 Some(token.hash()),
                 Some(client_id.to_string()),
                 Some("openid profile".to_string()),
+                None,
             )
             .await
             .expect("issue an opaque refresh token");
@@ -1208,27 +1190,28 @@ mod tests {
             AuthenticationEvidence, AuthenticationProof,
         };
         let seeded = seed().await;
-        let (token, row) = issue_opaque(&seeded, "web", chrono::Duration::hours(1)).await;
         let evidence = AuthenticationEvidence {
             authenticated_at: Some(42),
             method: AuthenticationProof::EmailLink,
             otp_verified: false,
         };
-        seeded
+        let token = OpaqueRefreshToken::generate();
+        let issued = seeded
             .repository
-            .set_authentication_evidence(row.jti, evidence.clone())
+            .create(
+                Uuid::new_v4(),
+                seeded.user_id,
+                Some(Utc::now() + chrono::Duration::hours(1)),
+                Some(Uuid::new_v4()),
+                None,
+                Some(token.hash()),
+                Some("web".to_string()),
+                None,
+                Some(evidence.clone()),
+            )
             .await
             .unwrap();
-        assert!(
-            seeded
-                .repository
-                .set_authentication_evidence(
-                    row.jti,
-                    AuthenticationEvidence::new(AuthenticationProof::Password)
-                )
-                .await
-                .is_err()
-        );
+        assert_eq!(issued.auth_evidence, Some(evidence.clone()));
         let successor_token = OpaqueRefreshToken::generate();
         let outcome = seeded
             .repository
