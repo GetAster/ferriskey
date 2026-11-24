@@ -369,6 +369,17 @@ pub enum LoginAdmission {
 /// when its value is `false`. An administrator sets it; nothing else does.
 pub const PASSKEY_REQUIRED_ATTRIBUTE: &str = "passkey_required";
 
+/// What an account's passkey rule says about signing in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PasskeyRule {
+    /// The realm has no passkey-only sign-in, or the account holds no passkey.
+    NotApplicable,
+    /// The account signs in with a passkey only.
+    Required,
+    /// The account holds a passkey, but its `passkey_required` attribute is `false`.
+    Waived,
+}
+
 #[cfg_attr(test, mockall::automock)]
 pub trait LoginAdmissionPort: Send + Sync {
     fn check_authentication_requirements(
@@ -382,14 +393,14 @@ pub trait LoginAdmissionPort: Send + Sync {
         input: AdmitLoginInput,
     ) -> impl Future<Output = Result<LoginAdmission, CoreError>> + Send;
 
-    /// Whether the account may sign in with a passkey only: the realm is
-    /// passwordless and offers passkeys, the user holds one registered before `registered_before`
-    /// (any, when `None`), and the user's `passkey_required` attribute is
-    /// not `false`. Absent means required.
-    fn account_requires_passkey(
+    /// The account's passkey rule. It applies when the realm is passwordless
+    /// and offers passkeys and the user holds one registered before
+    /// `registered_before` (any, when `None`); it is waived by a
+    /// `passkey_required` attribute of `false`, and absent means required.
+    fn account_passkey_rule(
         &self,
         realm_id: RealmId,
         user_id: Uuid,
         registered_before: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
+    ) -> impl Future<Output = Result<PasskeyRule, CoreError>> + Send;
 }

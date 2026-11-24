@@ -163,6 +163,17 @@ mod account_passkey {
         session: &str,
         user_id: Uuid,
     ) -> axum_test::TestResponse {
+        redeem_in(app, server, session, user_id, None).await
+    }
+
+    /// As [`redeem`], from a browser holding the recognition cookie `browser`.
+    async fn redeem_in(
+        app: &TestApp,
+        server: &axum_test::TestServer,
+        session: &str,
+        user_id: Uuid,
+        browser: Option<&str>,
+    ) -> axum_test::TestResponse {
         let token_id: Uuid =
             sqlx::query_scalar("SELECT token_id FROM magic_links WHERE user_id=$1")
                 .bind(user_id)
@@ -183,7 +194,13 @@ mod account_passkey {
             .get(&app.path("/login-actions/verify-magic-link"))
             .add_header(
                 "Cookie",
-                HeaderValue::from_str(&format!("FERRISKEY_SESSION={session}")).unwrap(),
+                HeaderValue::from_str(&match browser {
+                    Some(browser) => {
+                        format!("FERRISKEY_SESSION={session}; FERRISKEY_BROWSER={browser}")
+                    }
+                    None => format!("FERRISKEY_SESSION={session}"),
+                })
+                .unwrap(),
             )
             .add_query_param("token_id", token_id.to_string())
             .add_query_param("magic_token", SECRET)
@@ -260,6 +277,114 @@ mod account_passkey {
             let signed_in = redeem(app, &server, session.value(), user).await;
             assert_eq!(signed_in.status_code(), 200, "{}", signed_in.text());
             assert!(signed_in.json::<Value>()["url"].as_str().is_some_and(|u| u.contains("code=")), "{}", signed_in.text());
+        });
+    }
+
+    /// Sign in with an email link once, from `browser` (a new one when `None`),
+    /// and return the browser's recognition cookie from the answer.
+    async fn sign_in_with_link(
+        app: &TestApp,
+        server: &axum_test::TestServer,
+        client_id: &str,
+        user: Uuid,
+        email: &str,
+        browser: Option<&str>,
+    ) -> String {
+        let auth = authorize(server, app, client_id, &[]).await;
+        let session = auth.cookie("FERRISKEY_SESSION");
+        // The email limits allow one link a minute per address, so the link
+        // is written as sending would write it; `redeem_in` sets its secret.
+        sqlx::query("INSERT INTO magic_links (id, user_id, realm_id, token_id, token, expires_at, auth_session_code, email) VALUES ($1,$2,$3,$4,$5, now() AT TIME ZONE 'utc' + interval '10 minutes', $6, $7)")
+            .bind(Uuid::now_v7()).bind(user).bind(app.realm_id).bind(Uuid::now_v7())
+            .bind(Uuid::new_v4().to_string()).bind(session.value().parse::<Uuid>().unwrap()).bind(email)
+            .execute(&app.pool).await.unwrap();
+        let signed_in = redeem_in(app, server, session.value(), user, browser).await;
+        assert_eq!(signed_in.status_code(), 200, "{}", signed_in.text());
+        let header = signed_in
+            .headers()
+            .get_all("set-cookie")
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .find(|v| v.starts_with("FERRISKEY_BROWSER="))
+            .expect("every redemption renews the browser cookie")
+            .to_string();
+        assert!(
+            header.contains("HttpOnly") && header.contains("Max-Age=34560000"),
+            "{header}"
+        );
+        let value = header["FERRISKEY_BROWSER=".len()..]
+            .split(';')
+            .next()
+            .unwrap()
+            .to_string();
+        if let Some(browser) = browser.filter(|b| b.len() == 43) {
+            assert_eq!(value, browser, "a browser keeps a value the server drew");
+        }
+        value
+    }
+
+    async fn recommendations(app: &TestApp, user: Uuid) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM security_events WHERE realm_id=$1 AND details->>'email_type'='passkey_recommendation' AND details->>'user_id'=$2")
+            .bind(app.realm_id).bind(user.to_string()).fetch_one(&app.pool).await.unwrap()
+    }
+
+    async fn browsers(app: &TestApp, user: Uuid) -> Vec<Vec<u8>> {
+        sqlx::query_scalar(
+            "SELECT browser_hash FROM email_link_browsers WHERE user_id=$1 ORDER BY first_seen",
+        )
+        .bind(user)
+        .fetch_all(&app.pool)
+        .await
+        .unwrap()
+    }
+
+    async fn sha256(app: &TestApp, value: &str) -> Vec<u8> {
+        sqlx::query_scalar("SELECT sha256(convert_to($1, 'UTF8'))")
+            .bind(value)
+            .fetch_one(&app.pool)
+            .await
+            .unwrap()
+    }
+
+    #[test]
+    #[ignore = "requires PostgreSQL"]
+    fn a_waived_account_is_told_once_for_each_new_browser() {
+        let _serial = serial();
+        let app = app();
+        rt().block_on(async {
+            let server = app.server();
+            let client = app.client(ClientSpec::public()).await;
+            passwordless_realm(app).await;
+
+            let (user, email) = account(app).await;
+            passkey(app, user, 3600).await;
+            sqlx::query("INSERT INTO user_attributes (user_id, realm_id, key, value) VALUES ($1,$2,'passkey_required','false')")
+                .bind(user).bind(app.realm_id).execute(&app.pool).await.unwrap();
+
+            // A browser with no cookie is new: one recommendation, one record,
+            // stored as a hash of the cookie and never the value.
+            let first = sign_in_with_link(app, &server, &client.client_id, user, &email, None).await;
+            assert_eq!(first.len(), 43);
+            assert_eq!(recommendations(app, user).await, 1);
+            assert_eq!(browsers(app, user).await, vec![sha256(app, &first).await]);
+
+            // The same browser again: recognised, nothing sent.
+            sign_in_with_link(app, &server, &client.client_id, user, &email, Some(&first)).await;
+            assert_eq!(recommendations(app, user).await, 1, "a known browser is not told again");
+            assert_eq!(browsers(app, user).await.len(), 1);
+
+            // A value the server could not have drawn is replaced, not stored.
+            let forged = sign_in_with_link(app, &server, &client.client_id, user, &email, Some("not-ours")).await;
+            assert_ne!(forged, "not-ours");
+            assert_eq!(recommendations(app, user).await, 2);
+            assert_eq!(browsers(app, user).await.len(), 2);
+
+            // An account without a passkey is remembered but never told:
+            // there is nothing to recommend.
+            let (plain, plain_email) = account(app).await;
+            sign_in_with_link(app, &server, &client.client_id, plain, &plain_email, None).await;
+            assert_eq!(browsers(app, plain).await.len(), 1);
+            assert_eq!(recommendations(app, plain).await, 0);
         });
     }
 }

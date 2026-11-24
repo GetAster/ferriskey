@@ -46,10 +46,7 @@ async fn request_link() -> Proof {
     };
     // The HTTP request itself is covered by passwordless_login_test. Call the
     // service here to test many authority cases without exhausting the IP budget.
-    app.service
-        .generate_magic_link(input())
-        .await
-        .unwrap();
+    app.service.generate_magic_link(input()).await.unwrap();
     let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM users WHERE realm_id=$1 AND email=$2")
         .bind(app.realm_id)
         .bind(&email)
@@ -98,6 +95,9 @@ async fn redeem(proof: &Proof) -> bool {
     app()
         .service
         .verify_magic_link(VerifyMagicLinkInput {
+            browser_id: "test-browser".to_string(),
+            user_agent: None,
+            client_address: None,
             magic_token_id: proof.token,
             magic_token: proof.raw.clone(),
             webapp_base_url: "http://localhost:5555".into(),

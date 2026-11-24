@@ -4,8 +4,11 @@ use axum::{
     response::IntoResponse,
 };
 use axum_cookie::CookieManager;
-use ferriskey_api_core::login_step::login_action_cookie;
+use ferriskey_api_core::login_step::{
+    BROWSER_COOKIE, browser_cookie, is_browser_id, login_action_cookie,
+};
 use ferriskey_core::domain::authentication::ports::AuthService;
+use ferriskey_core::domain::common::generate_random_token;
 use ferriskey_core::domain::trident::ports::{
     MagicLinkInput, TridentService, VerifyMagicLinkInput,
 };
@@ -130,10 +133,17 @@ pub async fn verify_magic_link(
     State(state): State<AppState>,
     FullUrl(_, base_url): FullUrl,
     WebappUrl(webapp_url): WebappUrl,
+    context: RequestContext,
     cookie: CookieManager,
     Query(query): Query<VerifyMagicLinkQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     debug!("Verifying magic link for token_id: {}", query.token_id);
+
+    let browser_id = cookie
+        .get(BROWSER_COOKIE)
+        .map(|c| c.value().to_string())
+        .filter(|value| is_browser_id(value))
+        .unwrap_or_else(generate_random_token);
 
     let verified = state
         .service
@@ -144,6 +154,9 @@ pub async fn verify_magic_link(
             browser_session: cookie
                 .get("FERRISKEY_SESSION")
                 .and_then(|cookie| Uuid::parse_str(cookie.value()).ok()),
+            browser_id: browser_id.clone(),
+            user_agent: context.user_agent,
+            client_address: context.ip_address,
         })
         .await?;
 
@@ -151,6 +164,14 @@ pub async fn verify_magic_link(
 
     let pending = verified.login_url.is_empty();
     let mut headers = sso_cookie::headers(verified.sso_session, base_url.starts_with("https"))?;
+    headers.append(
+        header::SET_COOKIE,
+        browser_cookie(
+            browser_id,
+            &state.args.server.root_path,
+            base_url.starts_with("https"),
+        )?,
+    );
     if pending {
         let token = state
             .service
