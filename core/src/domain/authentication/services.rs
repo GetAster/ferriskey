@@ -2387,6 +2387,7 @@ where
                             plan.hash(),
                             Some(input.client_id.clone()),
                             signed.claims.scope.clone(),
+                            input.auth_evidence.clone(),
                         )
                         .await
                         .map_err(|_| CoreError::InternalServerError)
@@ -2394,12 +2395,6 @@ where
                 async { tokio::try_join!(persist_access, persist_refresh) }
                     .instrument(info_span!("auth.create_jwt.persist"))
                     .await?;
-                if let Some(evidence) = input.auth_evidence.clone() {
-                    self.refresh_token_repository
-                        .set_authentication_evidence(plan.jti, evidence)
-                        .await
-                        .map_err(|_| CoreError::InternalServerError)?;
-                }
             }
         }
 
@@ -6755,6 +6750,7 @@ where
                     plan.hash(),
                     Some(String::new()),
                     claims.scope.clone(),
+                    None,
                 )
                 .await
                 .map_err(|_| CoreError::InternalServerError)

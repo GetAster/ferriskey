@@ -59,12 +59,6 @@ pub trait JwtService: Send + Sync {
 
 #[cfg_attr(any(test, feature = "mock"), mockall::automock)]
 pub trait RefreshTokenRepository: Send + Sync {
-    fn set_authentication_evidence(
-        &self,
-        jti: Uuid,
-        evidence: ferriskey_domain::authentication::evidence::AuthenticationEvidence,
-    ) -> impl Future<Output = Result<(), SecurityError>> + Send;
-
     #[allow(clippy::too_many_arguments)]
     fn create(
         &self,
@@ -76,6 +70,7 @@ pub trait RefreshTokenRepository: Send + Sync {
         token_hash: Option<RefreshTokenHash>,
         client_id: Option<String>,
         scope: Option<String>,
+        auth_evidence: Option<ferriskey_domain::authentication::evidence::AuthenticationEvidence>,
     ) -> impl Future<Output = Result<RefreshToken, SecurityError>> + Send;
 
     /// Create a new refresh token that belongs to an existing token family.
