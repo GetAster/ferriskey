@@ -45,6 +45,7 @@ impl BrokerService for ApplicationService {
                     session_code: result.browser_session_id.map(|s| s.to_string()),
                     remember_me: intent.remember_me,
                     user_agent,
+                    client_address: ip_address,
                     provider_link: Some(intent.clone()),
                 })
                 .await?;

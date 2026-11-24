@@ -95,6 +95,7 @@ pub async fn send_magic_link(
             session_code,
             remember_me: payload.remember_me,
             user_agent: context.user_agent,
+            client_address: context.ip_address,
         })
         .await?;
 
