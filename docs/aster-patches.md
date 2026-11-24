@@ -327,3 +327,9 @@ Validation (row 29): 1,176 core unit tests passed, including three for the recom
 Validation (row 30): the refresh-token repository and retention PostgreSQL tests (20) passed, and the opaque refresh (18) and SSO session (28) suites passed. Passing `None` instead of the evidence failed `authentication_evidence_survives_sso_code_exchange_userinfo_and_refresh`.
 
 Known remaining failure: `login_statement_budget_test` still fails at its authenticate step (9 statements, budget 8). Row 30 removed the password-grant overrun, which had hidden this one. Both come from `4cbe59a1`: a password sign-in writes its evidence to `auth_sessions` with a guarded UPDATE and then writes the row again to issue the code. The test also fails on releases 14 and 15.
+
+### Release 16 published and live
+
+The host gate passed at the exact `85ae7fd6f913070623d249ac358ebbe78fb60e46` in aster-idp `f0522cf`: 170 tests, zero failed, including both fresh-PostgreSQL smoke tests; all-target/all-feature Clippy clean. The lock update changed only fork revisions. Published annotated tag `aster-ferriskey-v0.10.2-16` (tag object `b05a9540`, peeled commit verified on the remote).
+
+Deployed to `auth.getaster.now` with aster-idp `f0522cf` and portal_infra `6868016`; the `email_link_browsers` migration applied. Live check, with `passkey_required` set to `"false"` on a test account holding passkeys and removed afterwards: a first email-link sign-in from a fresh Chrome profile reached the launcher, set `FERRISKEY_BROWSER` (Path `/api`, HttpOnly, SameSite=Lax, 43 characters) and produced "New sign-in to your account" naming time, client address and "Chrome on macOS", with no link. A second sign-in from the same profile kept the cookie value, updated the one stored row's `last_seen` and sent no recommendation.
