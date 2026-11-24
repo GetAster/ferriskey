@@ -204,6 +204,9 @@ pub struct MagicLinkInput {
     /// The "remember me" choice, applied when the link completes the login.
     pub remember_me: bool,
     pub user_agent: Option<String>,
+    /// The requesting client's address, as the API recorded it; named in the
+    /// refusal email sent instead of a link to a passkey-only account.
+    pub client_address: Option<String>,
 }
 
 pub struct VerifyMagicLinkInput {

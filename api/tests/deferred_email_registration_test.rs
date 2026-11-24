@@ -42,6 +42,7 @@ async fn request_link() -> Proof {
         session_code: Some(session.to_string()),
         remember_me: false,
         user_agent: None,
+        client_address: None,
     };
     // The HTTP request itself is covered by passwordless_login_test. Call the
     // service here to test many authority cases without exhausting the IP budget.

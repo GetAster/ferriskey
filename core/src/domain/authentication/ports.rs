@@ -4,7 +4,7 @@ use crate::domain::authentication::value_objects::{
     EndSessionInput, EndSessionOutput, GenerateTokensForUserInput, GetUserInfoInput, Identity,
     IntrospectTokenInput, RevokeTokenInput, UserInfoResponse,
 };
-use crate::domain::realm::entities::{RealmScope, Scoped, Unscoped};
+use crate::domain::realm::entities::{RealmId, RealmScope, Scoped, Unscoped};
 use crate::domain::{
     authentication::{
         entities::{
@@ -365,6 +365,10 @@ pub enum LoginAdmission {
     },
 }
 
+/// The user attribute that turns the passkey-only rule off for one account
+/// when its value is `false`. An administrator sets it; nothing else does.
+pub const PASSKEY_REQUIRED_ATTRIBUTE: &str = "passkey_required";
+
 #[cfg_attr(test, mockall::automock)]
 pub trait LoginAdmissionPort: Send + Sync {
     fn check_authentication_requirements(
@@ -377,4 +381,15 @@ pub trait LoginAdmissionPort: Send + Sync {
         &self,
         input: AdmitLoginInput,
     ) -> impl Future<Output = Result<LoginAdmission, CoreError>> + Send;
+
+    /// Whether the account may sign in with a passkey only: the realm is
+    /// passwordless and offers passkeys, the user holds one registered before `registered_before`
+    /// (any, when `None`), and the user's `passkey_required` attribute is
+    /// not `false`. Absent means required.
+    fn account_requires_passkey(
+        &self,
+        realm_id: RealmId,
+        user_id: Uuid,
+        registered_before: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }

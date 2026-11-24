@@ -7,7 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use ferriskey_compass::{
     entities::{FlowId, FlowStepName},
     recorder::FlowRecorder,
@@ -277,6 +277,73 @@ fn passkey_assertion_error(error: WebauthnError) -> CoreError {
         | WebauthnError::CredentialPersistenceError
         | WebauthnError::CredentialCounterUpdateFailure => CoreError::InternalServerError,
         _ => CoreError::WebAuthnInvalidAssertion,
+    }
+}
+
+/// Subject of the email a passkey-only account receives instead of a sign-in link.
+pub const PASSKEY_REFUSAL_SUBJECT: &str = "Sign-in attempt refused";
+
+/// The refusal email's plain-text body: when, from where and in what, and
+/// what to do. Nothing in it lets the reader sign in.
+pub fn passkey_refusal_body(
+    at: DateTime<Utc>,
+    client_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> String {
+    let from = client_address
+        .filter(|a| !a.trim().is_empty())
+        .unwrap_or("an unknown address");
+    format!(
+        "Someone asked for an email link to sign in to your account.\n\n\
+When: {when}\n\
+From: {from}\n\
+Browser: {browser}\n\n\
+Your account signs in with a passkey only, so no link was sent and nobody was signed in.\n\n\
+If this was you, sign in on a device or browser that supports passkeys, such as Safari, Chrome, Edge or Firefox, and choose \"Continue with a passkey\".\n\n\
+If it wasn't you, you don't need to do anything: nobody can sign in without your passkey.\n",
+        when = at.format("%-d %B %Y, %H:%M UTC"),
+        browser = describe_browser(user_agent),
+    )
+}
+
+/// A person-readable "browser on system" from a User-Agent header. Order
+/// matters: Chromium-based browsers also say "Chrome" and "Safari", and
+/// Chrome says "Safari".
+pub fn describe_browser(user_agent: Option<&str>) -> String {
+    let Some(ua) = user_agent.filter(|ua| !ua.trim().is_empty()) else {
+        return "unknown".to_string();
+    };
+    let browser = [
+        ("Ladybird", "Ladybird"),
+        ("Edg/", "Edge"),
+        ("OPR/", "Opera"),
+        ("Firefox/", "Firefox"),
+        ("FxiOS/", "Firefox"),
+        ("CriOS/", "Chrome"),
+        ("Chrome/", "Chrome"),
+        ("Safari/", "Safari"),
+    ]
+    .iter()
+    .find(|(marker, _)| ua.contains(marker))
+    .map(|(_, name)| *name);
+    let system = [
+        ("iPhone", "iPhone"),
+        ("iPad", "iPad"),
+        ("Android", "Android"),
+        ("Windows", "Windows"),
+        ("Mac OS X", "macOS"),
+        ("Macintosh", "macOS"),
+        ("CrOS", "ChromeOS"),
+        ("Linux", "Linux"),
+    ]
+    .iter()
+    .find(|(marker, _)| ua.contains(marker))
+    .map(|(_, name)| *name);
+    match (browser, system) {
+        (Some(b), Some(s)) => format!("{b} on {s}"),
+        (Some(b), None) => b.to_string(),
+        (None, Some(s)) => format!("a browser on {s}"),
+        (None, None) => "unknown".to_string(),
     }
 }
 
@@ -2397,6 +2464,71 @@ where
         {
             return Ok(());
         }
+        // A passkey-only account gets no link: the email says a sign-in was
+        // attempted and refused. The HTTP answer is the same as for any
+        // address, and the work matches a link's (cleanup, token hash, one
+        // email) so its timing does not single the account out either.
+        if input.provider_link.is_none()
+            && let Some(user) = &user
+        {
+            let passkey_only = match self
+                .admission
+                .account_requires_passkey(realm.id, user.id, None)
+                .await
+            {
+                Ok(required) => required,
+                Err(e) => {
+                    error!(error = ?e, "Failed to read the account's passkey rule; sending nothing");
+                    return Ok(());
+                }
+            };
+            if passkey_only {
+                self.magic_link_repository
+                    .cleanup_expired(realm.id.into())
+                    .await?;
+                let _ = self
+                    .hasher_repository
+                    .hash_magic_token(&generate_random_token())
+                    .await
+                    .map_err(|_| CoreError::InternalServerError)?;
+                let to = user
+                    .email
+                    .clone()
+                    .unwrap_or_else(|| normalized_email.clone());
+                let body = passkey_refusal_body(
+                    Utc::now(),
+                    input.client_address.as_deref(),
+                    input.user_agent.as_deref(),
+                );
+                let status = match self.smtp_config_repository.get_by_realm_id(realm.id).await {
+                    Ok(Some(smtp_config)) => match self
+                        .email_port
+                        .send_email(&smtp_config, &to, PASSKEY_REFUSAL_SUBJECT, &body, None)
+                        .await
+                    {
+                        Ok(()) => (SecurityEventType::EmailSent, EventStatus::Success),
+                        Err(e) => {
+                            error!(error = ?e, "Failed to send a passkey-only refusal email");
+                            (SecurityEventType::EmailNotSent, EventStatus::Failure)
+                        }
+                    },
+                    _ => (SecurityEventType::EmailNotSent, EventStatus::Failure),
+                };
+                let _ = self
+                    .security_event_repository
+                    .store_event(
+                        SecurityEvent::new(realm.id, status.0, status.1, user.id).with_details(
+                            serde_json::json!({
+                                "email_type": "passkey_required_refusal",
+                                "user_id": user.id.to_string(),
+                            }),
+                        ),
+                    )
+                    .await
+                    .inspect_err(|e| warn!("Failed to record passkey refusal email event: {e}"));
+                return Ok(());
+            }
+        }
         let user_id = user.as_ref().map(|user| user.id);
         let delivery_email = user
             .as_ref()
@@ -3383,6 +3515,9 @@ mod tests {
             .expect_admit()
             .returning(|_| Box::pin(async { Ok(LoginAdmission::Proceed) }));
         admission
+            .expect_account_requires_passkey()
+            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+        admission
     }
 
     impl TridentTestBuilder {
@@ -3567,6 +3702,7 @@ mod tests {
             session_code: Some(session_code.to_string()),
             remember_me: false,
             user_agent: Some("Mozilla/5.0 (test)".to_string()),
+            client_address: Some("198.51.100.7".to_string()),
         }
     }
 
@@ -3725,6 +3861,130 @@ mod tests {
                     .is_ok()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_passkey_only_account_is_emailed_a_refusal_and_never_a_link() {
+        let session_code = Uuid::new_v4();
+        let mut admission = MockLoginAdmissionPort::new();
+        admission
+            .expect_account_requires_passkey()
+            .times(1)
+            .withf(|_, _, before| before.is_none())
+            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+        let mut builder = magic_link_send_builder().with_admission(admission);
+        Arc::get_mut(&mut builder.smtp_config_repo)
+            .unwrap()
+            .expect_get_by_realm_id()
+            .times(1)
+            .returning(|realm_id| {
+                Box::pin(async move {
+                    Ok(Some(ferriskey_domain::realm::SmtpConfig {
+                        id: Uuid::new_v4(),
+                        realm_id: realm_id.into(),
+                        host: "unused".into(),
+                        port: 25,
+                        username: String::new(),
+                        password: String::new(),
+                        from_email: "auth@example.com".into(),
+                        from_name: "Auth".into(),
+                        encryption: ferriskey_domain::realm::SmtpEncryption::None,
+                        created_at: Utc::now(),
+                        updated_at: Utc::now(),
+                    }))
+                })
+            });
+        // No create_magic_link and no set_remember_me expectation: the strict
+        // doubles fail the test if a link or its session choice is written.
+        Arc::get_mut(&mut builder.email_port)
+            .unwrap()
+            .expect_send_email()
+            .times(1)
+            .withf(|_, email, subject, body, html| {
+                email == "user@example.com"
+                    && subject == PASSKEY_REFUSAL_SUBJECT
+                    && body.contains("From: 198.51.100.7")
+                    && body.contains("no link was sent")
+                    && !body.contains("magic-link?")
+                    && html.is_none()
+            })
+            .returning(|_, _, _, _, _| Box::pin(async { Ok(()) }));
+        Arc::get_mut(&mut builder.security_event_repo)
+            .unwrap()
+            .expect_store_event()
+            .times(1)
+            .withf(|event| {
+                event
+                    .details
+                    .as_ref()
+                    .and_then(|d| d.get("email_type"))
+                    .and_then(|v| v.as_str())
+                    == Some("passkey_required_refusal")
+            })
+            .returning(|_| Box::pin(async { Ok(()) }));
+        assert!(
+            builder
+                .build()
+                .generate_magic_link(magic_link_input(session_code))
+                .await
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn the_refusal_names_the_time_address_and_browser_without_a_link() {
+        use chrono::TimeZone as _;
+        let at = Utc.with_ymd_and_hms(2026, 11, 24, 11, 43, 0).unwrap();
+        let body = passkey_refusal_body(
+            at,
+            Some("203.0.113.9"),
+            Some(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Ladybird/1.0",
+            ),
+        );
+        assert!(body.contains("When: 24 November 2026, 11:43 UTC"), "{body}");
+        assert!(body.contains("From: 203.0.113.9"), "{body}");
+        assert!(body.contains("Browser: Ladybird on macOS"), "{body}");
+        assert!(!body.contains("http"), "{body}");
+        let unknown = passkey_refusal_body(at, None, None);
+        assert!(
+            unknown.contains("From: an unknown address") && unknown.contains("Browser: unknown")
+        );
+    }
+
+    #[test]
+    fn browsers_are_named_by_their_own_marker_before_the_ones_they_imitate() {
+        let cases = [
+            (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+                "Edge on Windows",
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                "Chrome on macOS",
+            ),
+            (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+                "Safari on macOS",
+            ),
+            (
+                "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0 Mobile/15E148 Safari/604.1",
+                "Chrome on iPhone",
+            ),
+            (
+                "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0",
+                "Firefox on Linux",
+            ),
+            (
+                "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36",
+                "Chrome on Android",
+            ),
+            ("curl/8.7.1", "unknown"),
+        ];
+        for (ua, expected) in cases {
+            assert_eq!(describe_browser(Some(ua)), expected, "{ua}");
+        }
+        assert_eq!(describe_browser(None), "unknown");
     }
 
     #[tokio::test]

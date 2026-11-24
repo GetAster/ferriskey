@@ -59,6 +59,7 @@ use crate::domain::{
         ports::{
             AdmitLoginInput, AuthService, AuthSessionRepository, ConsentRedirect, LoginActionGrant,
             LoginActionToken, LoginActionTokenRepository, LoginAdmission, LoginAdmissionPort,
+            PASSKEY_REQUIRED_ATTRIBUTE,
         },
         value_objects::{
             AuthenticationResult, CodeChallengeMethod, EndSessionInput, EndSessionOutput,
@@ -4378,19 +4379,79 @@ where
             .await
     }
 
+    /// Whether the account signs in with a passkey only. See
+    /// [`LoginAdmissionPort::account_requires_passkey`].
+    pub(crate) async fn account_requires_passkey_before(
+        &self,
+        realm_id: RealmId,
+        user_id: Uuid,
+        registered_before: Option<DateTime<Utc>>,
+    ) -> Result<bool, CoreError> {
+        // Passwordless realms only: there the email link and providers are
+        // the alternatives a passkey replaces. Realms that keep passwords
+        // (administration) are left as their own login settings say.
+        let passkeys_offered = self
+            .realm_repository
+            .get_realm_settings(realm_id)
+            .await?
+            .is_some_and(|settings| settings.passkey_enabled && settings.passwordless_enabled);
+        if !passkeys_offered {
+            return Ok(false);
+        }
+        let credentials = self
+            .credential_repository
+            .get_credentials_by_user_id(user_id)
+            .await
+            .map_err(|_| CoreError::GetUserCredentialsError)?;
+        let holds_passkey = credentials.iter().any(|c| {
+            c.credential_type == CredentialType::WebAuthnPublicKeyCredential
+                && registered_before.is_none_or(|before| c.created_at < before)
+        });
+        if !holds_passkey {
+            return Ok(false);
+        }
+        let attributes = self
+            .user_attribute_repository
+            .list_by_user_id(user_id)
+            .await?;
+        Ok(!attributes.iter().any(|a| {
+            a.key == PASSKEY_REQUIRED_ATTRIBUTE && a.value.trim().eq_ignore_ascii_case("false")
+        }))
+    }
+
     async fn enforce_authentication_requirements(
         &self,
         auth_session: &AuthSession,
         user_id: Uuid,
     ) -> Result<(), CoreError> {
-        let Some(requirements) = &auth_session.auth_requirements else {
+        // A passkey added during this transaction does not bind it: the person
+        // has only just proven the account another way, to create one.
+        let account_passkey = self
+            .account_requires_passkey_before(
+                auth_session.realm_id,
+                user_id,
+                Some(auth_session.created_at),
+            )
+            .await?;
+        if auth_session.auth_requirements.is_none() && !account_passkey {
             return Ok(());
-        };
+        }
         if auth_session.expires_at <= Utc::now()
             || auth_session.user_id.is_some_and(|id| id != user_id)
         {
             return Err(CoreError::InvalidSession);
         }
+        if account_passkey
+            && !auth_session
+                .auth_evidence
+                .as_ref()
+                .is_some_and(|evidence| evidence.phishing_resistant())
+        {
+            return Err(CoreError::PasskeyAuthenticationRequired);
+        }
+        let Some(requirements) = &auth_session.auth_requirements else {
+            return Ok(());
+        };
         if requirements.satisfied(auth_session.auth_evidence.as_ref(), Utc::now().timestamp()) {
             return Ok(());
         }
@@ -5025,6 +5086,16 @@ where
         user_id: Uuid,
     ) -> Result<(), CoreError> {
         self.enforce_authentication_requirements(auth_session, user_id)
+            .await
+    }
+
+    async fn account_requires_passkey(
+        &self,
+        realm_id: RealmId,
+        user_id: Uuid,
+        registered_before: Option<DateTime<Utc>>,
+    ) -> Result<bool, CoreError> {
+        self.account_requires_passkey_before(realm_id, user_id, registered_before)
             .await
     }
 
