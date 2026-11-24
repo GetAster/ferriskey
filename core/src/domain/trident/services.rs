@@ -32,7 +32,7 @@ use crate::{
             entities::{AuthCompletion, AuthSession, AuthenticationError, WebAuthnChallenge},
             ports::{
                 AdmitLoginInput, AuthSessionRepository, LoginAdmission, LoginAdmissionPort,
-                OpenedSsoSession, SsoSessionPort,
+                OpenedSsoSession, PasskeyRule, SsoSessionPort,
             },
             services::format_auth_completion,
             value_objects::Identity,
@@ -304,6 +304,38 @@ If it wasn't you, you don't need to do anything: nobody can sign in without your
         when = at.format("%-d %B %Y, %H:%M UTC"),
         browser = describe_browser(user_agent),
     )
+}
+
+pub const PASSKEY_RECOMMENDATION_SUBJECT: &str = "New sign-in to your account";
+
+/// The plain-text email sent when an account that holds a passkey, but does
+/// not require it, signs in with an email link from a browser it has not
+/// used for that before.
+pub fn passkey_recommendation_body(
+    at: DateTime<Utc>,
+    client_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> String {
+    let from = client_address
+        .filter(|a| !a.trim().is_empty())
+        .unwrap_or("an unknown address");
+    format!(
+        "Your account was just signed in to with an email link, from a browser it hasn't used before.\n\n\
+When: {when}\n\
+From: {from}\n\
+Browser: {browser}\n\n\
+Your account has a passkey, but it still accepts email links. Anyone who can read your email can sign in with one. We recommend requiring your passkey for every sign-in; then email links stop working for your account.\n\n\
+If this wasn't you, someone has access to your email. Secure your email account first.\n",
+        when = at.format("%-d %B %Y, %H:%M UTC"),
+        browser = describe_browser(user_agent),
+    )
+}
+
+/// The stored form of a browser's recognition value. The value itself is
+/// never stored, so the table cannot be used to pose as a known browser.
+pub fn browser_recognition_hash(browser_id: &str) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(browser_id.as_bytes()).to_vec()
 }
 
 /// A person-readable "browser on system" from a User-Agent header. Order
@@ -604,6 +636,96 @@ where
             has_otp_credential,
             has_temporary_password,
         ))
+    }
+
+    /// Remember the browser that redeemed an email link and, when it is new
+    /// to an account whose passkey rule is waived, recommend requiring the
+    /// passkey. Nothing here can fail the sign-in it follows.
+    async fn note_email_link_browser(
+        &self,
+        scope: &RealmScope,
+        user_id: Uuid,
+        input: &VerifyMagicLinkInput,
+    ) {
+        let realm_id = scope.realm().id;
+        let known = match self
+            .magic_link_repository
+            .remember_browser(
+                realm_id.into(),
+                user_id,
+                browser_recognition_hash(&input.browser_id),
+                describe_browser(input.user_agent.as_deref()),
+            )
+            .await
+        {
+            Ok(known) => known,
+            Err(e) => {
+                warn!(error = ?e, "Failed to record the browser that redeemed an email link");
+                return;
+            }
+        };
+        if known {
+            return;
+        }
+        match self
+            .admission
+            .account_passkey_rule(realm_id, user_id, None)
+            .await
+        {
+            Ok(PasskeyRule::Waived) => {}
+            Ok(_) => return,
+            Err(e) => {
+                warn!(error = ?e, "Failed to read the account's passkey rule");
+                return;
+            }
+        }
+        let Some(to) = self
+            .user_repository
+            .get_by_id(user_id)
+            .await
+            .ok()
+            .and_then(|user| user.in_realm(scope).ok())
+            .and_then(|user| user.into_inner().email)
+        else {
+            return;
+        };
+        let body = passkey_recommendation_body(
+            Utc::now(),
+            input.client_address.as_deref(),
+            input.user_agent.as_deref(),
+        );
+        let status = match self.smtp_config_repository.get_by_realm_id(realm_id).await {
+            Ok(Some(smtp_config)) => match self
+                .email_port
+                .send_email(
+                    &smtp_config,
+                    &to,
+                    PASSKEY_RECOMMENDATION_SUBJECT,
+                    &body,
+                    None,
+                )
+                .await
+            {
+                Ok(()) => (SecurityEventType::EmailSent, EventStatus::Success),
+                Err(e) => {
+                    error!(error = ?e, "Failed to send a passkey recommendation email");
+                    (SecurityEventType::EmailNotSent, EventStatus::Failure)
+                }
+            },
+            _ => (SecurityEventType::EmailNotSent, EventStatus::Failure),
+        };
+        let _ = self
+            .security_event_repository
+            .store_event(
+                SecurityEvent::new(realm_id, status.0, status.1, user_id).with_details(
+                    serde_json::json!({
+                        "email_type": "passkey_recommendation",
+                        "user_id": user_id.to_string(),
+                    }),
+                ),
+            )
+            .await
+            .inspect_err(|e| warn!("Failed to record passkey recommendation email event: {e}"));
     }
 
     async fn passkey_offer_for(
@@ -2473,10 +2595,10 @@ where
         {
             let passkey_only = match self
                 .admission
-                .account_requires_passkey(realm.id, user.id, None)
+                .account_passkey_rule(realm.id, user.id, None)
                 .await
             {
-                Ok(required) => required,
+                Ok(rule) => rule == PasskeyRule::Required,
                 Err(e) => {
                     error!(error = ?e, "Failed to read the account's passkey rule; sending nothing");
                     return Ok(());
@@ -2870,6 +2992,7 @@ where
                 .check_authentication_requirements(&auth_session, user_id)
                 .await?;
         }
+        self.note_email_link_browser(&scope, user_id, &input).await;
 
         let pending = self
             .pending_auth_step_for(user_id, &scope, &[RequiredAction::VerifyEmail])
@@ -3515,8 +3638,8 @@ mod tests {
             .expect_admit()
             .returning(|_| Box::pin(async { Ok(LoginAdmission::Proceed) }));
         admission
-            .expect_account_requires_passkey()
-            .returning(|_, _, _| Box::pin(async { Ok(false) }));
+            .expect_account_passkey_rule()
+            .returning(|_, _, _| Box::pin(async { Ok(PasskeyRule::NotApplicable) }));
         admission
     }
 
@@ -3868,10 +3991,10 @@ mod tests {
         let session_code = Uuid::new_v4();
         let mut admission = MockLoginAdmissionPort::new();
         admission
-            .expect_account_requires_passkey()
+            .expect_account_passkey_rule()
             .times(1)
             .withf(|_, _, before| before.is_none())
-            .returning(|_, _, _| Box::pin(async { Ok(true) }));
+            .returning(|_, _, _| Box::pin(async { Ok(PasskeyRule::Required) }));
         let mut builder = magic_link_send_builder().with_admission(admission);
         Arc::get_mut(&mut builder.smtp_config_repo)
             .unwrap()
@@ -6108,6 +6231,19 @@ mod tests {
         realm: &crate::domain::realm::entities::Realm,
         user: &crate::domain::user::entities::User,
     ) -> MagicLinkFixture {
+        let mut fixture = magic_link_fixture_without_browser_record(realm, user);
+        Arc::get_mut(&mut fixture.builder.magic_link_repo)
+            .unwrap()
+            .expect_remember_browser()
+            .returning(|_, _, _, _| Box::pin(async { Ok(false) }));
+        fixture
+    }
+
+    /// The fixture without an answer for recording the redeeming browser.
+    fn magic_link_fixture_without_browser_record(
+        realm: &crate::domain::realm::entities::Realm,
+        user: &crate::domain::user::entities::User,
+    ) -> MagicLinkFixture {
         let mut builder = TridentTestBuilder::new();
         let session_code = Uuid::new_v4();
         let session = auth_session_with_challenge_issued_at(realm, session_code, None);
@@ -6165,6 +6301,147 @@ mod tests {
         }
     }
 
+    fn test_smtp_config(realm_id: RealmId) -> ferriskey_domain::realm::SmtpConfig {
+        ferriskey_domain::realm::SmtpConfig {
+            id: Uuid::new_v4(),
+            realm_id: realm_id.into(),
+            host: "unused".into(),
+            port: 25,
+            username: String::new(),
+            password: String::new(),
+            from_email: "auth@example.com".into(),
+            from_name: "Auth".into(),
+            encryption: ferriskey_domain::realm::SmtpEncryption::None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    /// Redeems a link from `browser_id` for an account whose passkey rule is
+    /// `rule`, with the browser `known` or new to it.
+    async fn redeem_from_browser(
+        rule: Option<PasskeyRule>,
+        known: bool,
+        expect_email: bool,
+    ) -> VerifyMagicLinkOutput {
+        let realm = create_test_realm_with_name("test-realm");
+        let user = create_test_user_with_email(&realm, "user@example.com");
+        let MagicLinkFixture {
+            mut builder,
+            token_id,
+            session,
+        } = magic_link_fixture_without_browser_record(&realm, &user);
+        let browser_session = Some(session.id);
+        expect_pending_step_lookups(
+            &mut builder,
+            user,
+            Vec::new(),
+            create_test_realm_setting(realm.id, false),
+        );
+        expect_authorization_code(&mut builder, session);
+        Arc::get_mut(&mut builder.magic_link_repo)
+            .unwrap()
+            .expect_remember_browser()
+            .times(1)
+            .withf(|_, _, hash, label| {
+                *hash == browser_recognition_hash("test-browser") && label == "Ladybird on macOS"
+            })
+            .returning(move |_, _, _, _| Box::pin(async move { Ok(known) }));
+        // Strict for the passkey rule: a read when none is expected fails the test.
+        let mut admission = MockLoginAdmissionPort::new();
+        admission
+            .expect_admit()
+            .returning(|_| Box::pin(async { Ok(LoginAdmission::Proceed) }));
+        if let Some(rule) = rule {
+            admission
+                .expect_account_passkey_rule()
+                .times(1)
+                .returning(move |_, _, _| Box::pin(async move { Ok(rule) }));
+        }
+        let mut builder = builder.with_admission(admission);
+        if expect_email {
+            Arc::get_mut(&mut builder.smtp_config_repo)
+                .unwrap()
+                .expect_get_by_realm_id()
+                .times(1)
+                .returning(|realm_id| {
+                    Box::pin(async move { Ok(Some(test_smtp_config(realm_id))) })
+                });
+            Arc::get_mut(&mut builder.email_port)
+                .unwrap()
+                .expect_send_email()
+                .times(1)
+                .withf(|_, email, subject, body, html| {
+                    email == "user@example.com"
+                        && subject == PASSKEY_RECOMMENDATION_SUBJECT
+                        && body.contains("From: 198.51.100.7")
+                        && body.contains("Browser: Ladybird on macOS")
+                        && !body.contains("http")
+                        && html.is_none()
+                })
+                .returning(|_, _, _, _, _| Box::pin(async { Ok(()) }));
+            Arc::get_mut(&mut builder.security_event_repo)
+                .unwrap()
+                .expect_store_event()
+                .times(1)
+                .withf(|event| {
+                    event
+                        .details
+                        .as_ref()
+                        .and_then(|d| d.get("email_type"))
+                        .and_then(|v| v.as_str())
+                        == Some("passkey_recommendation")
+                })
+                .returning(|_| Box::pin(async { Ok(()) }));
+        }
+        builder
+            .build()
+            .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: Some(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Ladybird/1.0"
+                        .to_string(),
+                ),
+                client_address: Some("198.51.100.7".to_string()),
+                webapp_base_url: TEST_WEBAPP_URL.to_string(),
+                browser_session,
+                magic_token_id: token_id,
+                magic_token: "raw_token".to_string(),
+            })
+            .await
+            .expect("the sign-in completes whatever the browser record says")
+    }
+
+    #[tokio::test]
+    async fn a_new_browser_on_an_account_that_waives_its_passkey_is_sent_a_recommendation() {
+        let output = redeem_from_browser(Some(PasskeyRule::Waived), false, true).await;
+        assert!(output.login_url.contains("code="), "{}", output.login_url);
+    }
+
+    #[tokio::test]
+    async fn a_known_browser_or_a_rule_that_is_not_waived_gets_no_recommendation() {
+        // Known browser: the rule is not even read.
+        redeem_from_browser(None, true, false).await;
+        // New browser, but the account requires its passkey or holds none.
+        redeem_from_browser(Some(PasskeyRule::Required), false, false).await;
+        redeem_from_browser(Some(PasskeyRule::NotApplicable), false, false).await;
+    }
+
+    #[test]
+    fn the_recommendation_names_the_time_address_and_browser_without_a_link() {
+        use chrono::TimeZone as _;
+        let at = Utc.with_ymd_and_hms(2026, 11, 24, 11, 43, 0).unwrap();
+        let body = passkey_recommendation_body(
+            at,
+            Some("203.0.113.9"),
+            Some("Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0"),
+        );
+        assert!(body.contains("When: 24 November 2026, 11:43 UTC"), "{body}");
+        assert!(body.contains("From: 203.0.113.9"), "{body}");
+        assert!(body.contains("Browser: Firefox on Linux"), "{body}");
+        assert!(!body.contains("http"), "{body}");
+    }
+
     #[tokio::test]
     async fn verify_magic_link_withholds_the_code_while_otp_enrolment_is_pending() {
         let realm = create_test_realm_with_name("test-realm");
@@ -6189,6 +6466,9 @@ mod tests {
         let service = builder.build();
         let result = service
             .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: None,
+                client_address: None,
                 webapp_base_url: TEST_WEBAPP_URL.to_string(),
                 browser_session,
                 magic_token_id: token_id,
@@ -6226,6 +6506,9 @@ mod tests {
         let service = builder.build();
         let result = service
             .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: None,
+                client_address: None,
                 webapp_base_url: TEST_WEBAPP_URL.to_string(),
                 browser_session,
                 magic_token_id: token_id,
@@ -6268,6 +6551,9 @@ mod tests {
         let service = builder.build();
         let result = service
             .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: None,
+                client_address: None,
                 webapp_base_url: TEST_WEBAPP_URL.to_string(),
                 browser_session,
                 magic_token_id: token_id,
@@ -6319,6 +6605,9 @@ mod tests {
         let service = builder.build();
         let result = service
             .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: None,
+                client_address: None,
                 webapp_base_url: TEST_WEBAPP_URL.to_string(),
                 browser_session,
                 magic_token_id: token_id,
@@ -7867,6 +8156,9 @@ mod tests {
             Box::pin(async move { Ok(LoginAdmission::ConsentRequired { redirect_url }) })
         });
         admission
+            .expect_account_passkey_rule()
+            .returning(|_, _, _| Box::pin(async { Ok(PasskeyRule::NotApplicable) }));
+        admission
     }
 
     #[tokio::test]
@@ -8226,6 +8518,9 @@ mod tests {
             .build();
         let output = service
             .verify_magic_link(VerifyMagicLinkInput {
+                browser_id: "test-browser".to_string(),
+                user_agent: None,
+                client_address: None,
                 webapp_base_url: TEST_WEBAPP_URL.to_string(),
                 browser_session,
                 magic_token_id: token_id,
@@ -8300,6 +8595,9 @@ mod tests {
             let service = builder.build();
             let result = service
                 .verify_magic_link(VerifyMagicLinkInput {
+                    browser_id: "test-browser".to_string(),
+                    user_agent: None,
+                    client_address: None,
                     webapp_base_url: TEST_WEBAPP_URL.to_string(),
                     browser_session,
                     magic_token_id: token_id,

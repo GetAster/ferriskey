@@ -23,6 +23,9 @@ async fn redeem(f: &Fixture) -> bool {
     app()
         .service
         .verify_magic_link(VerifyMagicLinkInput {
+            browser_id: "test-browser".to_string(),
+            user_agent: None,
+            client_address: None,
             magic_token_id: f.token,
             magic_token: f.raw.clone(),
             webapp_base_url: "http://localhost:5555".into(),

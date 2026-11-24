@@ -313,4 +313,59 @@ impl MagicLinkRepository for PostgresMagicLinkRepository {
 
         Ok(())
     }
+
+    async fn remember_browser(
+        &self,
+        realm_id: Uuid,
+        user_id: Uuid,
+        browser_hash: Vec<u8>,
+        label: String,
+    ) -> Result<bool, CoreError> {
+        // The CTE reads the table as it was before this statement's upsert,
+        // so `known` says whether the browser had been recorded before.
+        let row = self
+            .db
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "WITH prior AS (SELECT 1 FROM email_link_browsers WHERE user_id = $2 AND browser_hash = $3), \
+                 upsert AS (INSERT INTO email_link_browsers (id, realm_id, user_id, browser_hash, label) \
+                     VALUES ($5, $1, $2, $3, $4) \
+                     ON CONFLICT (user_id, browser_hash) DO UPDATE SET last_seen = now(), label = EXCLUDED.label \
+                     RETURNING 1) \
+                 SELECT EXISTS (SELECT 1 FROM prior) AS known, (SELECT count(*) FROM upsert) AS written",
+                [
+                    realm_id.into(),
+                    user_id.into(),
+                    browser_hash.into(),
+                    label.into(),
+                    generate_uuid_v7().into(),
+                ],
+            ))
+            .await
+            .map_err(|e| {
+                error!("Failed to record an email-link browser: {}", e);
+                CoreError::InternalServerError
+            })?
+            .ok_or(CoreError::InternalServerError)?;
+        let known: bool = row
+            .try_get("", "known")
+            .map_err(|_| CoreError::InternalServerError)?;
+        self.db
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "DELETE FROM email_link_browsers WHERE user_id = $1 AND id NOT IN \
+                 (SELECT id FROM email_link_browsers WHERE user_id = $1 ORDER BY last_seen DESC LIMIT $2)",
+                [user_id.into(), KEPT_BROWSERS_PER_ACCOUNT.into()],
+            ))
+            .await
+            .map_err(|e| {
+                error!("Failed to prune email-link browsers: {}", e);
+                CoreError::InternalServerError
+            })?;
+        Ok(known)
+    }
 }
+
+/// Enough for a person's own devices; an account signed in from more
+/// browsers than this forgets its oldest, which then count as new.
+const KEPT_BROWSERS_PER_ACCOUNT: i64 = 20;

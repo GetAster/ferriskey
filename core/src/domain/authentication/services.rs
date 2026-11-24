@@ -59,7 +59,7 @@ use crate::domain::{
         ports::{
             AdmitLoginInput, AuthService, AuthSessionRepository, ConsentRedirect, LoginActionGrant,
             LoginActionToken, LoginActionTokenRepository, LoginAdmission, LoginAdmissionPort,
-            PASSKEY_REQUIRED_ATTRIBUTE,
+            PASSKEY_REQUIRED_ATTRIBUTE, PasskeyRule,
         },
         value_objects::{
             AuthenticationResult, CodeChallengeMethod, EndSessionInput, EndSessionOutput,
@@ -4379,14 +4379,14 @@ where
             .await
     }
 
-    /// Whether the account signs in with a passkey only. See
-    /// [`LoginAdmissionPort::account_requires_passkey`].
-    pub(crate) async fn account_requires_passkey_before(
+    /// The account's passkey rule. See
+    /// [`LoginAdmissionPort::account_passkey_rule`].
+    pub(crate) async fn account_passkey_rule_before(
         &self,
         realm_id: RealmId,
         user_id: Uuid,
         registered_before: Option<DateTime<Utc>>,
-    ) -> Result<bool, CoreError> {
+    ) -> Result<PasskeyRule, CoreError> {
         // Passwordless realms only: there the email link and providers are
         // the alternatives a passkey replaces. Realms that keep passwords
         // (administration) are left as their own login settings say.
@@ -4396,7 +4396,7 @@ where
             .await?
             .is_some_and(|settings| settings.passkey_enabled && settings.passwordless_enabled);
         if !passkeys_offered {
-            return Ok(false);
+            return Ok(PasskeyRule::NotApplicable);
         }
         let credentials = self
             .credential_repository
@@ -4408,15 +4408,20 @@ where
                 && registered_before.is_none_or(|before| c.created_at < before)
         });
         if !holds_passkey {
-            return Ok(false);
+            return Ok(PasskeyRule::NotApplicable);
         }
         let attributes = self
             .user_attribute_repository
             .list_by_user_id(user_id)
             .await?;
-        Ok(!attributes.iter().any(|a| {
+        let waived = attributes.iter().any(|a| {
             a.key == PASSKEY_REQUIRED_ATTRIBUTE && a.value.trim().eq_ignore_ascii_case("false")
-        }))
+        });
+        Ok(if waived {
+            PasskeyRule::Waived
+        } else {
+            PasskeyRule::Required
+        })
     }
 
     async fn enforce_authentication_requirements(
@@ -4427,12 +4432,13 @@ where
         // A passkey added during this transaction does not bind it: the person
         // has only just proven the account another way, to create one.
         let account_passkey = self
-            .account_requires_passkey_before(
+            .account_passkey_rule_before(
                 auth_session.realm_id,
                 user_id,
                 Some(auth_session.created_at),
             )
-            .await?;
+            .await?
+            == PasskeyRule::Required;
         if auth_session.auth_requirements.is_none() && !account_passkey {
             return Ok(());
         }
@@ -5089,13 +5095,13 @@ where
             .await
     }
 
-    async fn account_requires_passkey(
+    async fn account_passkey_rule(
         &self,
         realm_id: RealmId,
         user_id: Uuid,
         registered_before: Option<DateTime<Utc>>,
-    ) -> Result<bool, CoreError> {
-        self.account_requires_passkey_before(realm_id, user_id, registered_before)
+    ) -> Result<PasskeyRule, CoreError> {
+        self.account_passkey_rule_before(realm_id, user_id, registered_before)
             .await
     }
 

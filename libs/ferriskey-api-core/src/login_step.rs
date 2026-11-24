@@ -41,6 +41,34 @@ pub fn login_action_cookie(
         .map_err(|_| ApiError::InternalServerError("Invalid cookie header".into()))
 }
 
+/// Lets the server recognise a browser that has redeemed an email link
+/// before. It names no account; the server keeps only a hash of its value.
+pub const BROWSER_COOKIE: &str = "FERRISKEY_BROWSER";
+/// The longest lifetime browsers honour for a cookie (400 days).
+pub const BROWSER_COOKIE_MAX_AGE_SECONDS: i64 = 400 * 24 * 60 * 60;
+
+/// Only values this server could have drawn are kept, so a browser cannot
+/// make the server store arbitrary text.
+pub fn is_browser_id(value: &str) -> bool {
+    value.len() == 43 && value.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+pub fn browser_cookie(
+    value: String,
+    root_path: &str,
+    is_secure: bool,
+) -> Result<HeaderValue, ApiError> {
+    let path = if root_path.is_empty() { "/" } else { root_path };
+    let cookie = Cookie::build((BROWSER_COOKIE, value))
+        .path(path.to_string())
+        .http_only(true)
+        .secure(is_secure)
+        .same_site(SameSite::Lax)
+        .max_age(time::Duration::seconds(BROWSER_COOKIE_MAX_AGE_SECONDS));
+    HeaderValue::from_str(&cookie.to_string())
+        .map_err(|_| ApiError::InternalServerError("Invalid cookie header".into()))
+}
+
 fn login_action_cookie_path(root_path: &str, realm_name: &str) -> String {
     format!("{root_path}/realms/{realm_name}/login-actions")
 }

@@ -214,6 +214,11 @@ pub struct VerifyMagicLinkInput {
     pub magic_token: String,
     pub webapp_base_url: String,
     pub browser_session: Option<Uuid>,
+    /// The redeeming browser's long-lived recognition value; the handler
+    /// draws a new one for a browser that has none.
+    pub browser_id: String,
+    pub user_agent: Option<String>,
+    pub client_address: Option<String>,
 }
 
 pub struct RequestPasswordResetInput {
@@ -485,6 +490,17 @@ pub trait MagicLinkRepository: Send + Sync {
 
     fn cleanup_expired(&self, realm_id: Uuid)
     -> impl Future<Output = Result<(), CoreError>> + Send;
+
+    /// Record that the browser whose recognition hash is `browser_hash`
+    /// redeemed an email link for this account, and say whether it had done
+    /// so before. Only the most recent browsers of each account are kept.
+    fn remember_browser(
+        &self,
+        realm_id: Uuid,
+        user_id: Uuid,
+        browser_hash: Vec<u8>,
+        label: String,
+    ) -> impl Future<Output = Result<bool, CoreError>> + Send;
 }
 
 #[cfg_attr(test, mockall::automock)]
